@@ -24,7 +24,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 |---|---|
 | **M1 – Terrain engine** | Done. Unit tests pass, including against real Terrarium tiles (`NETWORK=1`), 14 Nov 2026. |
 | **M2 – Map view** | Done, with OS base maps. Live at https://slipperyeel-svg.github.io/Ground-Truth/ ; real OS Explorer tiles and elevation loaded there on 14 Nov 2026. Still to check: blue grid lines exactly on the OS grid, and the OpenStreetMap layer. |
-| **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation; **OSM features not yet tested on real data** (Overpass unreachable from the cloud workspace). Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
+| **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation. OSM features load and display correctly on the PO's device (Larkhill/Amesbury, 14 Nov 2026); Overpass is still unreachable from the cloud workspace. Problems paused at the PO's request. Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
 | M4 – Templates B and C, ground classification choosing between them, access-safe stands from OSM paths | Not started. |
 | M5 – DS feedback, answer capture, then LLM prose and critique from computed facts only | Not started. |
 | M6 – AR prototype (React Native/Expo, native) | Not started. Do not begin until Phase 1 is complete. |
