@@ -36,6 +36,19 @@ export interface ViewshedOptions {
   maxRangeM?: number;
   /** Allow for Earth curvature and refraction. Default false (<0.6 m at 3 km). */
   earthCurvature?: boolean;
+  /** Woods, buildings and hedges that block sight (see features/obstacles.ts). Default none. */
+  obstacles?: Obstacles;
+}
+
+/**
+ * Things standing on the ground that block sight. `heightM` is added to the
+ * ground along each sight line. In `wood` cells a sight line may reach
+ * `seeIntoWoodM` past the point where it entered the wood, and no further.
+ */
+export interface Obstacles {
+  heightM: Float32Array;
+  wood: Uint8Array;
+  seeIntoWoodM: number;
 }
 
 export const VIEW_DEFAULTS = {
@@ -46,10 +59,10 @@ export const VIEW_DEFAULTS = {
 } as const;
 
 /** Merge options over defaults, ignoring keys that are explicitly undefined. */
-export function resolveViewOptions(opts: ViewshedOptions = {}): Required<ViewshedOptions> {
-  const out: Required<ViewshedOptions> = { ...VIEW_DEFAULTS };
+export function resolveViewOptions(opts: ViewshedOptions = {}): Required<Omit<ViewshedOptions, 'obstacles'>> {
+  const out: Required<Omit<ViewshedOptions, 'obstacles'>> = { ...VIEW_DEFAULTS };
   for (const [k, v] of Object.entries(opts)) {
-    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+    if (v !== undefined && k !== 'obstacles') (out as Record<string, unknown>)[k] = v;
   }
   return out;
 }
@@ -70,6 +83,8 @@ export function viewshed(g: Grid, observer: Point, opts: ViewshedOptions = {}): 
   const out = new Uint8Array(w * g.height);
   const o = pointToCell(g, observer);
   if (!inBounds(g, o.col, o.row)) return out;
+  const obs = opts.obstacles;
+  const observerInWood = !!obs && obs.wood[o.row * w + o.col] === 1;
 
   const z0 = data[o.row * w + o.col] + obsHeightM;
   const R = Math.ceil(maxRangeM / cellM);
@@ -85,6 +100,10 @@ export function viewshed(g: Grid, observer: Point, opts: ViewshedOptions = {}): 
     const sr = dr / steps;
     const stepLenCells = Math.hypot(sc, sr);
     let maxGrad = -Infinity;
+    // Where this ray entered the wood it is in (metres), and the blocking
+    // gradient at that point; -1 when not in a wood.
+    let woodEntry = observerInWood ? 0 : -1;
+    let gradAtEntry = -Infinity;
     for (let k = 1; k <= steps; k++) {
       const fc = o.col + sc * k;
       const fr = o.row + sr * k;
@@ -93,13 +112,25 @@ export function viewshed(g: Grid, observer: Point, opts: ViewshedOptions = {}): 
       if (!inBounds(g, col, row)) return;
       const dCells = stepLenCells * k;
       if (dCells > R + 1) return;
+      const i = row * w + col;
       const cellInRange = (col - o.col) ** 2 + (row - o.row) ** 2 <= maxR2;
       const d = dCells * cellM;
       const zg = sampleBilinear(g, fc, fr) - curvatureDrop(d, earthCurvature);
       const targetGrad = (zg + targetHeightM - z0) / d;
-      if (cellInRange && targetGrad >= maxGrad) out[row * w + col] = 1;
-      const groundGrad = (zg - z0) / d;
-      if (groundGrad > maxGrad) maxGrad = groundGrad;
+      if (obs && obs.wood[i]) {
+        if (woodEntry < 0) {
+          woodEntry = d;
+          gradAtEntry = maxGrad;
+        }
+        // Inside the treeline: seen only near the edge, and only if the edge itself is seen.
+        if (cellInRange && d - woodEntry <= obs.seeIntoWoodM && targetGrad >= gradAtEntry) out[i] = 1;
+      } else {
+        woodEntry = -1;
+        if (cellInRange && targetGrad >= maxGrad) out[i] = 1;
+      }
+      const top = zg + (obs ? obs.heightM[i] : 0);
+      const blockGrad = (top - z0) / d;
+      if (blockGrad > maxGrad) maxGrad = blockGrad;
     }
   };
 
@@ -124,6 +155,7 @@ export function lineOfSight(
   hFrom: number = VIEW_DEFAULTS.obsHeightM,
   hTo: number = VIEW_DEFAULTS.targetHeightM,
   earthCurvature = false,
+  obstacles?: Obstacles,
 ): boolean {
   const D = distance(from, to);
   if (D < g.cellM) return true;
@@ -131,6 +163,29 @@ export function lineOfSight(
   const z1 = elevationAtPoint(g, to) + hTo - curvatureDrop(D, earthCurvature);
   const targetGrad = (z1 - z0) / D;
   const n = Math.ceil(D / (g.cellM / 2));
+  const cellAt = (t: number) => {
+    const c = pointToCell(g, { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+    return inBounds(g, c.col, c.row) ? c.row * g.width + c.col : -1;
+  };
+  const inWood = (t: number) => {
+    const i = cellAt(t);
+    return !!obstacles && i >= 0 && obstacles.wood[i] === 1;
+  };
+  // Wood at either end: the trees within `seeIntoWoodM` of that end do not
+  // block, but the end must be no deeper than that into the wood.
+  let skipNearTo = 0;
+  let skipNearFrom = 0;
+  if (obstacles) {
+    const see = obstacles.seeIntoWoodM;
+    if (inWood(1)) {
+      let k = n - 1;
+      while (k > 0 && inWood(k / n)) k--;
+      const depth = D - (k / n) * D;
+      if (depth > see + g.cellM / 2) return false;
+      skipNearTo = see + g.cellM / 2;
+    }
+    if (inWood(0)) skipNearFrom = see + g.cellM / 2;
+  }
   for (let k = 1; k < n; k++) {
     const t = k / n;
     const d = t * D;
@@ -138,7 +193,14 @@ export function lineOfSight(
     if (d < g.cellM / 2 || D - d < g.cellM / 2) continue;
     const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
     const { c, r } = pointToFractional(g, p);
-    const zg = sampleBilinear(g, c, r) - curvatureDrop(d, earthCurvature);
+    let zg = sampleBilinear(g, c, r) - curvatureDrop(d, earthCurvature);
+    if (obstacles) {
+      const i = cellAt(t);
+      if (i >= 0) {
+        const nearEndInWood = obstacles.wood[i] === 1 && (D - d <= skipNearTo || d <= skipNearFrom);
+        if (!nearEndInWood) zg += obstacles.heightM[i];
+      }
+    }
     if ((zg - z0) / d > targetGrad) return false;
   }
   return true;
@@ -216,7 +278,7 @@ export function exposure(
   const seenBy: number[] = [];
   enemyObservers.forEach((ob, i) => {
     if (distance(ob.point, position) > maxRangeM) return;
-    if (lineOfSight(g, ob.point, position, ob.heightM ?? obsHeightM, targetHeightM, earthCurvature)) {
+    if (lineOfSight(g, ob.point, position, ob.heightM ?? obsHeightM, targetHeightM, earthCurvature, opts.obstacles)) {
       seenBy.push(i);
     }
   });

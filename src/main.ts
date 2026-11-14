@@ -460,7 +460,8 @@ async function runViewshed(x: number, y: number) {
   (map.getSource('tap') as GeoJSONSource).setData(pointGeoJSON(ll.lon, ll.lat));
   status('Computing viewshed…');
   try {
-    const r = await engine.viewshed(x, y, obsH, tgtH, range);
+    const useObstacles = ($('tg-obstacles') as HTMLInputElement).checked;
+    const r = await engine.viewshed(x, y, obsH, tgtH, range, useObstacles, status);
     (map.getSource('viewshed') as ImageSource).updateImage({
       url: viewshedImage(ground.width, ground.height, ground.cellM, r.mask, { x, y }, range),
       coordinates: boxCorners(box),
@@ -468,7 +469,7 @@ async function runViewshed(x: number, y: number) {
     const ref = gridRef(ll.lat, ll.lon, 4);
     $('vs-info').textContent =
       `From ${ref.ref} (ground ${Math.round(r.observerGroundM)} m): observer ${obsH} m, target ${tgtH} m. ` +
-      `Sees ${Math.round(r.visibleShare * 100)}% of the ground within ${range.toLocaleString('en-GB')} m. (${r.timeMs} ms)`;
+      `Sees ${Math.round(r.visibleShare * 100)}% of the ground within ${range.toLocaleString('en-GB')} m. ${r.obstaclesNote} (${r.timeMs} ms)`;
     status('Viewshed shown');
   } catch (err) {
     status(`Viewshed failed: ${(err as Error).message}`);
@@ -526,7 +527,7 @@ $('btn-vs-clear').addEventListener('click', () => {
   $('vs-info').textContent = '';
 });
 
-for (const id of ['sel-obs', 'sel-target', 'sel-range']) {
+for (const id of ['sel-obs', 'sel-target', 'sel-range', 'tg-obstacles']) {
   $(id).addEventListener('change', () => {
     if (lastObserver) void runViewshed(lastObserver.x, lastObserver.y);
   });

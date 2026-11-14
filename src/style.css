@@ -83,3 +83,6 @@ select { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var
 .feat-row { margin-top: 8px; }
 .legend.wrap { flex-wrap: wrap; gap: 4px 12px; }
 .legend.wrap > span { display: inline-flex; align-items: center; gap: 4px; }
+
+label.check { display: flex; align-items: center; gap: 6px; font-size: 14px; min-height: 36px; margin-top: 4px; }
+label.check input { width: 20px; height: 20px; }

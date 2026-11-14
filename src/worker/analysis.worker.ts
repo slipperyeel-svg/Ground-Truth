@@ -22,6 +22,7 @@ import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
 import { generateProblem } from '../tactics/problem';
 import { fetchCombinedFeatures } from '../features/osVector';
+import { buildObstacles, type Obstacles } from '../features/obstacles';
 import { inGreatBritain } from '../geo/gridref';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -29,6 +30,7 @@ let grid: Grid | null = null;
 let isDemo = false;
 /** Map features for the loaded ground: fetched once, on the first problem request. */
 let layers: FeatureLayers | null = null;
+let obstacles: Obstacles | null = null;
 let featureNote = '';
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) => ctx.postMessage(msg, transfer);
@@ -78,6 +80,7 @@ async function ensureLayers(progress: (m: string) => void): Promise<void> {
       fetchOsm: (pathsAndHedgesOnly) => fetchFeatures(centre, sizeM, { pathsAndHedgesOnly }),
     });
     layers = buildLayers(grid, combined.set);
+    obstacles = buildObstacles(grid, layers);
     const c = layers.counts;
     const roads = (c['major-road'] ?? 0) + (c['minor-road'] ?? 0) + (c.motorway ?? 0);
     featureNote =
@@ -96,6 +99,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });
       isDemo = !!req.demo;
       layers = null;
+      obstacles = null;
       featureNote = '';
       grid = req.demo
         ? demoGrid(req.demo, req.sizeM, req.cellM, req.lat, req.lon)
@@ -133,9 +137,23 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       );
     } else if (req.type === 'viewshed') {
       if (!grid) throw new Error('No ground loaded yet');
+      if (req.useObstacles) await ensureLayers((message) => post({ type: 'progress', id: req.id, message }));
       const t0 = performance.now();
       const p = { x: req.x, y: req.y };
-      const opts = { obsHeightM: req.obsHeightM, targetHeightM: req.targetHeightM, maxRangeM: req.maxRangeM };
+      const useObs = req.useObstacles && !!obstacles;
+      const obstaclesNote = !req.useObstacles
+        ? 'Woods, buildings and hedges ignored (bare ground).'
+        : useObs
+          ? 'Woods (15 m, seen 15 m in), buildings (8 m) and hedges (2 m) block sight.'
+          : isDemo
+            ? 'Demo ground has no woods or buildings.'
+            : 'Woods and buildings could not be loaded, so they are ignored.';
+      const opts = {
+        obsHeightM: req.obsHeightM,
+        targetHeightM: req.targetHeightM,
+        maxRangeM: req.maxRangeM,
+        obstacles: useObs ? obstacles! : undefined,
+      };
       const mask = viewshed(grid, p, opts);
       const inRange = countMask(inRangeMask(grid, [{ point: p }], req.maxRangeM));
       post(
@@ -147,6 +165,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
             observerGroundM: elevationAtPoint(grid, p),
             visibleShare: inRange ? countMask(mask) / inRange : 0,
             timeMs: Math.round(performance.now() - t0),
+            obstaclesNote,
           },
         },
         [mask.buffer],

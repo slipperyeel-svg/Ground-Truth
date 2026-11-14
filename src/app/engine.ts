@@ -61,7 +61,15 @@ export class Engine {
     return this.request<ProblemView>({ type: 'problem', allowUnchecked }, onProgress);
   }
 
-  viewshed(x: number, y: number, obsHeightM: number, targetHeightM: number, maxRangeM: number): Promise<ViewshedResult> {
-    return this.request<ViewshedResult>({ type: 'viewshed', x, y, obsHeightM, targetHeightM, maxRangeM });
+  viewshed(
+    x: number,
+    y: number,
+    obsHeightM: number,
+    targetHeightM: number,
+    maxRangeM: number,
+    useObstacles: boolean,
+    onProgress?: (m: string) => void,
+  ): Promise<ViewshedResult> {
+    return this.request<ViewshedResult>({ type: 'viewshed', x, y, obsHeightM, targetHeightM, maxRangeM, useObstacles }, onProgress);
   }
 }

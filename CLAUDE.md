@@ -76,7 +76,7 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/terrain/grid.ts` | Grid type, coordinates, bilinear sampling |
 | `src/terrain/slope.ts` | Slope, aspect, hillshade (Horn's method) |
 | `src/terrain/tpi.ts` | Topographic position index (summed-area table); landform classes |
-| `src/terrain/viewshed.ts` | Radial-sweep viewshed, line of sight, union viewshed, dead ground, exposure, coverage |
+| `src/terrain/viewshed.ts` | Radial-sweep viewshed, line of sight, union viewshed, dead ground, exposure, coverage; optional obstacles (woods, buildings, hedges) |
 | `src/terrain/crest.ts` | Topographical and military crests relative to the enemy; `isSilhouetted` |
 | `src/terrain/classify.ts` | flat / rolling / ridge / valley, with plain-English reasons |
 | `src/terrain/contours.ts` | Marching-squares contours |
@@ -95,6 +95,7 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/features/layers.ts` | Features → grid layers: land cover, routes, going, exclusions, stand-allowed cells |
 | `src/features/mvt.ts` | Small reader for vector tiles (no dependency) |
 | `src/features/osVector.ts` | OS open-data features from the Vector Tile API; combining with OSM paths and hedges |
+| `src/features/obstacles.ts` | Woods (15 m, see 15 m in), buildings (8 m), hedges (2 m) as obstacles to sight |
 | `src/features/render.ts` | Draws the captured features as a see-through map picture ("Show features") |
 | `src/tactics/approach.ts` | Least-cost enemy approach, corridor, NAI and what channels it |
 | `src/tactics/enemyOps.ts` | Likely enemy OPs: best viewpoints on the enemy side |

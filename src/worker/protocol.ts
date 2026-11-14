@@ -26,6 +26,8 @@ export type WorkerRequest =
       obsHeightM: number;
       targetHeightM: number;
       maxRangeM: number;
+      /** Let woods, buildings and hedges block sight (fetches map features if needed). */
+      useObstacles: boolean;
     }
   | {
       /** Fetch the map features for the loaded ground and draw them. */
@@ -58,6 +60,8 @@ export interface ViewshedResult {
   observerGroundM: number;
   visibleShare: number; // share of cells in range that are visible
   timeMs: number;
+  /** Whether woods, buildings and hedges were included, or why not. */
+  obstaclesNote: string;
 }
 
 /** The captured map features, drawn as a see-through picture over the box. */
