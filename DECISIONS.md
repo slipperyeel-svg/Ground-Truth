@@ -91,3 +91,11 @@ The engine now reads the features of the ground as well as its shape, finds the 
 53. **"Show features"** fetches the OSM features for the loaded box once (shared with "Set a problem") and draws the engine's own grid layers as a see-through picture, so what you see is exactly what the engine will use. Lines are drawn at their analysis width (e.g. a minor road 10 m wide), so they look thin when zoomed out.
 54. **OSM completeness varies.** Hedges, walls and small paths are often unmapped in OSM, especially in farmland; woods and roads are usually good. Anything missing in OSM is missing to the engine.
 55. **Features confirmed on real data.** The PO loaded the Larkhill–Amesbury box (about SU 12–16, 41–45) on his own device and the captured features looked right to him. This was the first run on real OSM data, and confirms Overpass is reachable from a browser (CORS works).
+
+## Moving to OS open mapping (14 Nov 2026)
+
+56. **PO: OS premium data is not sustainable for a public app** (every user's requests would count against one account). The OS 1:25,000 Explorer map is premium too.
+57. **PO decision: features from OS open data where it has them** (woods, water, rivers, buildings, built-up areas, roads, railways), fetched on demand through the **OS Vector Tile API** with the existing key. **OpenStreetMap stays for paths, tracks and hedges**, which OS open data does not contain.
+58. **PO decision: the default base map becomes the free OS open map** (Vector Tile API). Explorer 1:25,000 stays available in the Map menu.
+59. **Blocked on the PO:** the Vector Tile API must be added to the OS Data Hub project (the key currently gets 401 "Invalid ApiKey for given resource"), and we must confirm it is on the free OpenData plan. Downloading and self-hosting OS Open Zoomstack or OpenMap Local was rejected: the GB-wide files are gigabytes, too big for GitHub Pages.
+60. **No new dependency:** vector tiles (Mapbox Vector Tile protobuf) are decoded by a small reader in our own code (`src/features/mvt.ts`).
