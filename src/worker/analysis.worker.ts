@@ -21,6 +21,8 @@ import { featureImage } from '../features/render';
 import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
 import { generateProblem } from '../tactics/problem';
+import { fetchCombinedFeatures } from '../features/osVector';
+import { inGreatBritain } from '../geo/gridref';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let grid: Grid | null = null;
@@ -66,14 +68,20 @@ function demoGrid(kind: DemoTerrain, sizeM: number, cellM: number, lat: number, 
 /** Fetch and draw the map features for the loaded ground, once per box. */
 async function ensureLayers(progress: (m: string) => void): Promise<void> {
   if (!grid || isDemo || layers) return;
-  progress('Fetching roads, woods, water and paths from OpenStreetMap…');
+  progress('Fetching woods, water, roads and paths…');
   try {
-    const fs = await fetchFeatures(grid.meta.centre!, grid.width * grid.cellM);
-    layers = buildLayers(grid, fs);
+    const centre = grid.meta.centre!;
+    const sizeM = grid.width * grid.cellM;
+    const combined = await fetchCombinedFeatures(centre, sizeM, {
+      osKey: import.meta.env.VITE_OS_KEY ?? '',
+      inGB: inGreatBritain(centre.lat, centre.lon),
+      fetchOsm: (pathsAndHedgesOnly) => fetchFeatures(centre, sizeM, { pathsAndHedgesOnly }),
+    });
+    layers = buildLayers(grid, combined.set);
     const c = layers.counts;
     const roads = (c['major-road'] ?? 0) + (c['minor-road'] ?? 0) + (c.motorway ?? 0);
     featureNote =
-      `From OpenStreetMap: ${roads} roads, ${c.track ?? 0} tracks, ${c.path ?? 0} paths, ` +
+      `${combined.sources.join(' ')} Loaded: ${roads} roads, ${c.track ?? 0} tracks, ${c.path ?? 0} paths, ` +
       `${c.wood ?? 0} woods, ${c.scrub ?? 0} areas of scrub, ${(c.water ?? 0) + (c.river ?? 0) + (c.stream ?? 0)} water features, ` +
       `${c.hedge ?? 0} hedges, ${c['built-up'] ?? 0} built-up areas, ${c.building ?? 0} buildings, ${c.railway ?? 0} railway lines.`;
   } catch (err) {

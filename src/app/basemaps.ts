@@ -14,10 +14,11 @@ export const OS_KEY: string = import.meta.env.VITE_OS_KEY ?? '';
 const OS_ZXY = 'https://api.os.uk/maps/raster/v1/zxy';
 const OS_ATTRIBUTION = `Contains OS data © Crown copyright and database rights ${new Date().getFullYear()}`;
 
-export type BaseMapId = 'os-explorer' | 'os-outdoor' | 'osm';
+export type BaseMapId = 'os-open' | 'os-explorer' | 'os-outdoor' | 'osm';
 
 export const BASE_MAPS: { id: BaseMapId; label: string; gbOnly: boolean }[] = [
-  { id: 'os-explorer', label: 'OS Explorer 1:25,000 (GB)', gbOnly: true },
+  { id: 'os-open', label: 'OS open map (GB, free)', gbOnly: true },
+  { id: 'os-explorer', label: 'OS Explorer 1:25,000 (GB, premium)', gbOnly: true },
   { id: 'os-outdoor', label: 'OS Outdoor (GB)', gbOnly: true },
   { id: 'osm', label: 'OpenStreetMap (worldwide)', gbOnly: false },
 ];
@@ -55,6 +56,54 @@ export function baseMapSources(): Record<string, SourceSpecification> {
     };
   }
   return sources;
+}
+
+// ---------- OS open map (OS Vector Tile API) ----------
+
+/**
+ * Label fonts and symbols: with an OS key the whole map uses OS's (the OS
+ * style needs them, and a map can only have one font server); without, the
+ * free OpenFreeMap fonts.
+ */
+export const GLYPHS_URL = OS_KEY
+  ? `https://api.os.uk/maps/vector/v1/vts/resources/fonts/{fontstack}/{range}.pbf?key=${OS_KEY}&srs=3857`
+  : 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+export const SPRITE_URL = OS_KEY ? `https://api.os.uk/maps/vector/v1/vts/resources/sprites/sprite?key=${OS_KEY}&srs=3857` : undefined;
+export const LABEL_FONT = OS_KEY ? 'Source Sans Pro Regular' : 'Noto Sans Regular';
+
+/** Prefix for the OS open map's layers, so they can be shown and hidden together. */
+export const OS_OPEN_PREFIX = 'osv-';
+
+/**
+ * Add the OS open map to the map, hidden, beneath `beforeId`. The layers come
+ * from OS's own style; the tile source is ours, capped at zoom 15 so that no
+ * premium tiles are ever requested (beyond 15 the map enlarges zoom 15).
+ */
+export async function addOsOpenMap(map: maplibregl.Map, beforeId: string): Promise<boolean> {
+  if (!OS_KEY) return false;
+  const res = await fetch(`https://api.os.uk/maps/vector/v1/vts/resources/styles?key=${OS_KEY}&srs=3857`);
+  if (!res.ok) return false;
+  const style = (await res.json()) as { layers: maplibregl.LayerSpecification[] };
+  map.addSource('os-open', {
+    type: 'vector',
+    tiles: [`https://api.os.uk/maps/vector/v1/vts/tile/{z}/{y}/{x}.pbf?srs=3857&key=${OS_KEY}`],
+    maxzoom: 15,
+    bounds: [-8.8, 49.8, 2.0, 60.9],
+    attribution: OS_ATTRIBUTION,
+  });
+  for (const layer of style.layers) {
+    const sl = (layer as { 'source-layer'?: string })['source-layer'] ?? '';
+    // MasterMap Topography layers are premium: leave them out entirely.
+    if (sl.startsWith('Topographic')) continue;
+    const l = { ...layer, id: OS_OPEN_PREFIX + layer.id } as maplibregl.LayerSpecification & { source?: string; maxzoom?: number };
+    // OS hides its open layers beyond zoom 16, where MasterMap would take
+    // over. Keep them showing (enlarged) at every zoom instead.
+    if (l.maxzoom !== undefined && l.maxzoom >= 16) delete l.maxzoom;
+    if ('source' in layer) l.source = 'os-open';
+    l.layout = { ...(layer.layout ?? {}), visibility: 'none' } as never;
+    map.addLayer(l, beforeId);
+  }
+  return true;
 }
 
 // ---------- OS British National Grid tiles, re-drawn for the map ----------

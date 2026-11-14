@@ -83,8 +83,19 @@ export function bboxAround(centre: { lat: number; lon: number }, sizeM: number):
  * The Overpass query for every tag the engine uses. `out geom` returns the
  * coordinates inline, so no second request is needed.
  */
-export function overpassQuery(b: BBox, timeoutS = 60): string {
+export function overpassQuery(b: BBox, timeoutS = 60, pathsAndHedgesOnly = false): string {
   const box = `(${b.south.toFixed(6)},${b.west.toFixed(6)},${b.north.toFixed(6)},${b.east.toFixed(6)})`;
+  if (pathsAndHedgesOnly) {
+    // Only what OS open data lacks: paths, tracks, hedges and walls.
+    return [
+      `[out:json][timeout:${timeoutS}];`,
+      '(',
+      `  way["highway"~"^(track|path|footway|bridleway|cycleway|steps|byway)$"]${box};`,
+      `  way["barrier"~"^(hedge|wall|city_wall)$"]${box};`,
+      ');',
+      'out geom;',
+    ].join('\n');
+  }
   return [
     `[out:json][timeout:${timeoutS}];`,
     '(',
@@ -266,10 +277,10 @@ export function parseOverpass(json: OverpassResponse, centre: { lat: number; lon
 export async function fetchFeatures(
   centre: { lat: number; lon: number },
   sizeM: number,
-  opts: { url?: string; fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+  opts: { url?: string; fetchImpl?: typeof fetch; signal?: AbortSignal; pathsAndHedgesOnly?: boolean } = {},
 ): Promise<FeatureSet> {
   const f = opts.fetchImpl ?? fetch;
-  const body = new URLSearchParams({ data: overpassQuery(bboxAround(centre, sizeM)) });
+  const body = new URLSearchParams({ data: overpassQuery(bboxAround(centre, sizeM), 60, opts.pathsAndHedgesOnly) });
   const res = await f(opts.url ?? OVERPASS_URL, {
     method: 'POST',
     body,

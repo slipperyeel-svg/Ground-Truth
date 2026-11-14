@@ -93,6 +93,8 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/app/basemaps.ts` | OS Explorer, OS Outdoor and OpenStreetMap; registers the `os27700://` protocol |
 | `src/features/osm.ts` | Overpass query; OSM tags → feature kinds; parse to local metres |
 | `src/features/layers.ts` | Features → grid layers: land cover, routes, going, exclusions, stand-allowed cells |
+| `src/features/mvt.ts` | Small reader for vector tiles (no dependency) |
+| `src/features/osVector.ts` | OS open-data features from the Vector Tile API; combining with OSM paths and hedges |
 | `src/features/render.ts` | Draws the captured features as a see-through map picture ("Show features") |
 | `src/tactics/approach.ts` | Least-cost enemy approach, corridor, NAI and what channels it |
 | `src/tactics/enemyOps.ts` | Likely enemy OPs: best viewpoints on the enemy side |
@@ -113,10 +115,12 @@ The analysis of a 4 km box at 10 m cells takes about 0.2 s on a desktop-class CP
 | Elevation (default, global) | AWS Terrain Tiles, Terrarium PNG, zoom 13 | `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`. Decode: `(R*256 + G + B/256) - 32768`. In GB this is mostly **EU-DEM (~30 m, a surface model)**: woods and towns may read as raised ground. Reported resolution is never finer than 30 m. |
 | Elevation (GB, fallback) | OS Terrain 50 (ASCII grid) | Parser done; wiring a GPS position to it needs BNG conversion (available in `gridref.ts`). |
 | Elevation (England, fine) | Environment Agency LIDAR DTM, 1–2 m | Later. Would enable section/platoon problems. |
-| Base map, GB | OS Maps API: `Leisure_27700` (1:25k at BNG zooms 7–9, warped in-app) and `Outdoor_3857` (zooms 7–16) | Free premium allowance of £1,000/month. Zooms above 16 / BNG 9 are premium MasterMap: do not request them. |
+| Base map, GB (default) | **OS open map**: OS Vector Tile API, OS's own style, tiles capped at zoom 15 | OS OpenData: free and unlimited. Never request vector tiles above zoom 15 (premium MasterMap). |
+| Base map, GB (optional) | OS Maps API: `Leisure_27700` (1:25k, premium, warped in-app) and `Outdoor_3857` | Premium beyond the free £1,000/month: not sustainable for public release (DECISIONS.md 56). |
 | Base map, elsewhere | OpenStreetMap standard tiles | Fine for development only. **Needs a proper provider before wider release.** |
 | Map label fonts | OpenFreeMap glyphs | |
-| Paths, roads, water, woods | OpenStreetMap via Overpass | Needed from M4. Respect the usage policy. |
+| Woods, water, buildings, roads, railways (GB) | OS open data via the OS Vector Tile API, zoom 14 | Free. `src/features/osVector.ts`. |
+| Paths, tracks, hedges (and everything outside GB) | OpenStreetMap via Overpass | Respect the usage policy; self-host before public release. |
 
 **Attribution** must show as each licence requires (EU-DEM/Copernicus, Environment Agency, USGS, OS, OSM). The full Joerd attribution list (github.com/tilezen/joerd/blob/master/docs/attribution.md) has not yet been checked.
 

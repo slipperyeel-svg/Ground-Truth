@@ -30,7 +30,7 @@ import {
   type BoxGeo,
 } from './app/overlays';
 import { gridRef, inGreatBritain } from './geo/gridref';
-import { BASE_MAPS, baseMapSources, OS_KEY, registerOsProtocol, type BaseMapId } from './app/basemaps';
+import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
 import type { DemoTerrain, LoadedGround, ProblemView } from './worker/protocol';
@@ -63,7 +63,8 @@ registerOsProtocol();
 const baseSources = baseMapSources();
 const style: StyleSpecification = {
   version: 8,
-  glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+  glyphs: GLYPHS_URL,
+  ...(SPRITE_URL ? { sprite: SPRITE_URL } : {}),
   sources: baseSources,
   layers: [
     { id: 'background', type: 'background', paint: { 'background-color': '#f6f3ea' } },
@@ -93,21 +94,30 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 const baseSelect = $('sel-base') as HTMLSelectElement;
 for (const b of BASE_MAPS) {
   if (b.id !== 'osm' && !OS_KEY) continue; // OS maps need a key
-  baseSelect.add(new Option(b.label, b.id));
+  const opt = new Option(b.label, b.id);
+  if (b.id === 'os-open') opt.disabled = true; // enabled once the OS style has loaded
+  baseSelect.add(opt);
 }
 baseSelect.add(new Option('None (terrain layers only)', 'none'));
 let baseChosenByUser = false;
+
+let osOpenReady = false;
 
 function setBaseMap(id: BaseMapId | 'none') {
   for (const src of Object.keys(baseSources)) {
     if (map.getLayer(`base-${src}`)) map.setLayoutProperty(`base-${src}`, 'visibility', src === id ? 'visible' : 'none');
   }
+  if (osOpenReady) {
+    const vis = id === 'os-open' ? 'visible' : 'none';
+    for (const l of map.getStyle().layers) if (l.id.startsWith(OS_OPEN_PREFIX)) map.setLayoutProperty(l.id, 'visibility', vis);
+  }
   baseSelect.value = id;
 }
 
-/** OS Explorer in Great Britain (if we have a key), OpenStreetMap elsewhere. */
+/** The free OS open map in Great Britain (if we have a key), OpenStreetMap elsewhere. */
 function defaultBaseFor(lat: number, lon: number): BaseMapId {
-  return OS_KEY && inGreatBritain(lat, lon) ? 'os-explorer' : 'osm';
+  if (!OS_KEY || !inGreatBritain(lat, lon)) return 'osm';
+  return osOpenReady ? 'os-open' : 'os-outdoor';
 }
 
 baseSelect.addEventListener('change', () => {
@@ -155,7 +165,7 @@ map.on('load', () => {
     layout: {
       'symbol-placement': 'line',
       'text-field': ['get', 'label'],
-      'text-font': ['Noto Sans Regular'],
+      'text-font': [LABEL_FONT],
       'text-size': 11,
       'symbol-spacing': 400,
     },
@@ -169,7 +179,7 @@ map.on('load', () => {
     layout: {
       'symbol-placement': 'line',
       'text-field': ['get', 'label'],
-      'text-font': ['Noto Sans Regular'],
+      'text-font': [LABEL_FONT],
       'text-size': 12,
       'symbol-spacing': 250,
     },
@@ -190,7 +200,7 @@ map.on('load', () => {
   });
   map.addLayer({
     id: 'nai-label', type: 'symbol', source: 'problem', filter: ['==', ['get', 'kind'], 'nai'],
-    layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 14 },
+    layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 14 },
     paint: { 'text-color': '#7a3d00', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
   map.addLayer({
@@ -207,7 +217,7 @@ map.on('load', () => {
   });
   map.addLayer({
     id: 'ds-labels', type: 'symbol', source: 'ds', filter: ['!=', ['get', 'kind'], 'loc'],
-    layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
   map.addLayer({
@@ -222,6 +232,17 @@ map.on('load', () => {
     source: 'tap',
     paint: { 'circle-radius': 7, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 2 },
   });
+
+  // The free OS open map goes beneath all our own layers.
+  void addOsOpenMap(map, 'hillshade')
+    .then((ok) => {
+      osOpenReady = ok;
+      if (!ok) return;
+      const opt = [...baseSelect.options].find((o) => o.value === 'os-open');
+      if (opt) opt.disabled = false;
+      if (!baseChosenByUser) setBaseMap(defaultBaseFor(map.getCenter().lat, map.getCenter().lng));
+    })
+    .catch(() => undefined);
 
   if (params.get('autoload') === '1' || demo) void loadGround(startLat, startLon);
 });
