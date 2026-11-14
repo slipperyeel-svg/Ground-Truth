@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2f3a2a" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <title>Ground Truth</title>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <header id="topbar">
+      <span class="brand">Ground Truth</span>
+      <span id="status" role="status" aria-live="polite">Ready</span>
+    </header>
+
+    <section id="panel" aria-label="Controls">
+      <div class="row buttons">
+        <button id="btn-here" class="primary">Load ground at my position</button>
+        <button id="btn-centre">Load at map centre</button>
+      </div>
+
+      <div id="position" class="block">
+        <div class="label">You</div>
+        <div id="pos-ref" class="gr">—</div>
+        <div id="pos-detail" class="detail"></div>
+      </div>
+
+      <div id="ground-info" class="block" hidden>
+        <div class="label">Ground</div>
+        <div id="ground-class" class="value"></div>
+        <div id="ground-detail" class="detail"></div>
+        <div id="data-source" class="source"></div>
+      </div>
+
+      <div id="vs-block" class="block" hidden>
+        <div class="label">Viewshed — tap the map, or</div>
+        <div class="row">
+          <button id="btn-vs-me">From my position</button>
+          <button id="btn-vs-clear">Clear</button>
+        </div>
+        <div class="row selects">
+          <label>Observer
+            <select id="sel-obs">
+              <option value="2" selected>2 m (standing)</option>
+              <option value="1">1 m (prone/kneeling)</option>
+              <option value="3">3 m (vehicle sight)</option>
+              <option value="5">5 m (mast/turret)</option>
+            </select>
+          </label>
+          <label>Target
+            <select id="sel-target">
+              <option value="2" selected>2 m (man)</option>
+              <option value="3">3 m (vehicle)</option>
+              <option value="0.5">0.5 m (prone man)</option>
+            </select>
+          </label>
+          <label>Range
+            <select id="sel-range">
+              <option value="1500">1,500 m</option>
+              <option value="3000" selected>3,000 m</option>
+              <option value="5000">5,000 m</option>
+            </select>
+          </label>
+        </div>
+        <div id="vs-info" class="detail"></div>
+        <div class="legend"><span class="sw seen"></span> can be seen <span class="sw dead"></span> dead ground</div>
+      </div>
+
+      <div class="row toggles">
+        <label><input type="checkbox" id="tg-hillshade" checked /> Hillshade</label>
+        <label><input type="checkbox" id="tg-contours" checked /> Contours</label>
+        <label><input type="checkbox" id="tg-grid" checked /> Grid</label>
+      </div>
+      <div class="row selects">
+        <label>Map
+          <select id="sel-base"></select>
+        </label>
+      </div>
+    </section>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

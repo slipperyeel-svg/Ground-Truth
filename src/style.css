@@ -1,0 +1,68 @@
+/* Built for a phone in daylight: high contrast, large touch targets. */
+:root {
+  --ink: #1d2118;
+  --paper: #f6f3ea;
+  --olive: #2f3a2a;
+  --accent: #b5651d; /* contour brown */
+  --muted: #5a5f52;
+  --seen: rgba(40, 160, 70, 0.45);
+  --dead: rgba(200, 40, 40, 0.45);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--ink);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); }
+/* Stack: title bar, map, control panel. The map gets whatever space is left. */
+body { display: flex; flex-direction: column; height: 100dvh; }
+
+#map { position: relative; flex: 1 1 auto; min-height: 45dvh; }
+
+#topbar {
+  order: -1; flex: 0 0 auto;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+  background: var(--olive); color: #fff; font-size: 15px; z-index: 2;
+}
+#topbar .brand { font-weight: 700; letter-spacing: 0.02em; }
+#status { font-size: 13px; opacity: 0.9; text-align: right; }
+
+#panel {
+  flex: 0 1 auto; z-index: 2;
+  max-height: 45dvh; overflow-y: auto;
+  padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+  background: var(--paper); border-top: 2px solid var(--olive);
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.15);
+  font-size: 15px;
+}
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.buttons button { flex: 1 1 45%; }
+
+button {
+  min-height: 44px; padding: 8px 12px; font: inherit; font-weight: 600;
+  border: 2px solid var(--olive); border-radius: 8px;
+  background: #fff; color: var(--olive); cursor: pointer;
+}
+button.primary { background: var(--olive); color: #fff; }
+button:disabled { opacity: 0.5; }
+
+.block { margin-top: 10px; padding-top: 8px; border-top: 1px solid #d8d3c4; }
+.label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.gr { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 22px; font-weight: 700; }
+.value { font-size: 18px; font-weight: 700; text-transform: capitalize; }
+.detail { font-size: 14px; color: var(--ink); margin-top: 2px; }
+.source { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+.selects label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+select { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var(--olive); border-radius: 6px; background: #fff; }
+
+.toggles { margin-top: 10px; font-size: 14px; }
+.toggles label { display: flex; align-items: center; gap: 4px; min-height: 36px; }
+.toggles input { width: 20px; height: 20px; }
+
+.legend { font-size: 13px; margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+.sw.seen { background: var(--seen); }
+.sw.dead { background: var(--dead); }
+

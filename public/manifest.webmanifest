@@ -1,0 +1,17 @@
+{
+  "name": "Ground Truth — tactical problems on the ground",
+  "short_name": "Ground Truth",
+  "description": "Tactical problems set on the ground where you stand.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f3ea",
+  "theme_color": "#2f3a2a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
