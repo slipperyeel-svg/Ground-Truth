@@ -1,12 +1,17 @@
 /*
  * Service worker: keeps the app working without signal once it has been used.
- *  - App files: served from cache, refreshed in the background when online.
+ *  - The page itself (index.html): fetched from the network first, so an
+ *    update shows straight away; the saved copy is used only without signal.
+ *    (Serving the saved page first broke the app after an update: it pointed
+ *    at script and style files that the new deploy had removed.)
+ *  - Other app files: their names change with every build, so they are
+ *    served from cache when we have them and kept when fetched.
  *  - Elevation tiles, map tiles and fonts: served from cache if we have them,
  *    otherwise fetched and kept. So any ground you have loaded (and any map
  *    you have looked at) is available offline afterwards.
  * Bump VERSION to clear old caches after a change to this file.
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `gt-shell-${VERSION}`;
 const TILES = `gt-tiles-${VERSION}`;
 // OS tiles (api.os.uk) are deliberately NOT cached until we have checked
@@ -52,17 +57,25 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.origin === self.location.origin) {
-    // Stale-while-revalidate for the app itself.
+    const isPage = req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('.html');
     event.respondWith(
       caches.open(SHELL).then(async (cache) => {
-        const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
-        const network = fetch(req)
-          .then((res) => {
-            if (res.ok) cache.put(req, res.clone());
+        if (isPage) {
+          // Network first for the page, so updates appear at once.
+          try {
+            const res = await fetch(req, { cache: 'no-cache' });
+            if (res.ok) cache.put('./index.html', res.clone());
             return res;
-          })
-          .catch(() => hit);
-        return hit ?? network;
+          } catch {
+            return (await cache.match('./index.html')) ?? new Response('Offline', { status: 503 });
+          }
+        }
+        // Cache first for everything else (file names change with each build).
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
       }),
     );
   }
