@@ -36,6 +36,33 @@
         <div id="data-source" class="source"></div>
       </div>
 
+      <div id="problem-block" class="block" hidden>
+        <div class="label">Tactical problem</div>
+        <div class="row buttons">
+          <button id="btn-problem" class="primary">Set a problem</button>
+          <button id="btn-ds" hidden>Show DS solution</button>
+        </div>
+        <div id="problem" hidden>
+          <h2 id="pr-title"></h2>
+          <h3>General situation</h3>
+          <p id="pr-gs"></p>
+          <h3>Special situation</h3>
+          <p id="pr-ss"></p>
+          <h3>Requirement</h3>
+          <ol id="pr-req"></ol>
+          <h3>Time allowed</h3>
+          <p id="pr-time"></p>
+          <div id="pr-ds" hidden>
+            <h3>DS notes (computed facts)</h3>
+            <ul id="pr-ds-list"></ul>
+            <div class="legend"><span class="sw nai"></span> NAI 1 <span class="sw enemy"></span> enemy OP <span class="sw own"></span> own OP <span class="sw guns"></span> gun area</div>
+          </div>
+          <p id="pr-data" class="source"></p>
+        </div>
+        <div id="pr-features" class="source"></div>
+        <details id="pr-log" hidden><summary>Why this ground and direction</summary><ul id="pr-log-list"></ul></details>
+      </div>
+
       <div id="vs-block" class="block" hidden>
         <div class="label">Viewshed — tap the map, or</div>
         <div class="row">

@@ -66,3 +66,15 @@ select { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var
 .sw.seen { background: var(--seen); }
 .sw.dead { background: var(--dead); }
 
+
+/* Tactical problem */
+#problem h2 { font-size: 17px; margin: 10px 0 4px; }
+#problem h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 10px 0 2px; }
+#problem p, #problem li { font-size: 15px; line-height: 1.4; margin: 2px 0; }
+#problem ol, #problem ul, #pr-log ul { padding-left: 20px; margin: 4px 0; }
+#pr-log { font-size: 13px; margin-top: 6px; }
+#pr-log li { margin: 2px 0; }
+.sw.nai { background: rgba(230, 120, 0, 0.6); }
+.sw.enemy { background: #c00; }
+.sw.own { background: #1a73e8; }
+.sw.guns { background: #2e7d32; }

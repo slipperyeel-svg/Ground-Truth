@@ -50,3 +50,37 @@ Significant technical choices and the reasons for them. Items marked **PO** need
 30. **The OS key is kept out of the source code**, in `.env.local` (not tracked by git). It is necessarily visible inside the built app, as with any browser map key.
 31. **To check (PO / OS terms):** (a) whether OS's free premium allowance permits our use; (b) whether OS tiles may be cached for offline use — until confirmed, the service worker does **not** cache OS tiles, so OS mapping needs signal; (c) whether OS requires its logo on the map, in addition to the "Contains OS data © Crown copyright" attribution already shown.
 32. **Not tested against the live OS service.** My workspace cannot reach api.os.uk, so the first real test of OS tiles is on your device.
+
+## PO decisions before M3 (14 Nov 2026)
+
+The PO answered the questions blocking M3, and widened the aim: the engine should read the *features* of the ground (roads, woods, water, buildings) as well as its shape, and set the problem on them.
+
+33. **Military crest (item 13): confirmed** as defined above.
+34. **Smallest crest (item 14): confirmed** at 10 m for 30 m data.
+35. **Enemy approach and NAI (CLAUDE.md §7.6): best mobility corridor.** The engine finds the most likely approach from the enemy side using roads, tracks and open, gently sloping ground, avoiding woods, water, buildings and steep ground. The NAI goes where that approach is channelled (a defile, bridge, or gap between woods or obstacles). This replaces the brief's "side with the lowest ground" rule.
+36. **Likely enemy OPs (item 16, CLAUDE.md §7.4): best viewpoints.** The 5–7 points on the enemy side that see most of the friendly area, spaced at least 300 m apart, preferring wood edges, buildings and crests where a real OP would hide. Replaces the placeholder line.
+37. **Skylining default (item 15)** not yet discussed; 1,500 m stays as the default.
+38. **Feature data source:** OpenStreetMap via the Overpass API (`overpass-api.de`), as named in the brief. Fetched with plain `fetch`; no new dependency.
+
+## M3 – Feature-aware problem engine and Template A (14 Nov 2026)
+
+The engine now reads the features of the ground as well as its shape, finds the enemy's approach, NAI and likely OPs, and sets Template A with its quality gate. Code: `src/features/` (OSM features → grid layers), `src/tactics/` (approach, enemy OPs, Template A, problem generator and wording).
+
+### Technical
+
+39. **Features are drawn onto the analysis grid** as layers: land cover (open, wood, scrub, water, wetland, built-up, building), best road or path, rivers, streams, railways, hedges, walls, cliffs, crossings (a road or track over water), going, stand exclusions and stand-allowed cells. Areas are filled by cell centre (scanline, even–odd rule, so holes in woods work); lines are drawn with a half-width per kind.
+40. **Enemy approach = least-cost path** (Dijkstra, 8-connected) over the going layer from the enemy edge of the box to the friendly edge. The *corridor* is every cell on a route no more than 10% dearer than the best. The NAI goes where the corridor is narrowest, between 25% and 65% of the way along the route and at least 400 m from the side edges; it is a 250 m-radius circle of corridor cells.
+41. **Open ground ties.** On open ground many routes cost the same and the cheapest one hugs the edge of the box. Going is therefore raised gently towards the side edges (up to 15%, plus up to 50% in the last 600 m). Real obstacles cost far more, so they still decide the route.
+42. **"What channels the enemy"** is read from just outside the corridor at the NAI: woods, water, marsh, buildings, the railway, or ground steeper than 12°. With no features loaded, only steep ground can be named. If nothing is found the NAI is reported as "on open ground" and such problems rank below channelled ones.
+43. **Speed.** Viewsheds over many points run on a 30 m copy of the grid, the true resolution of the data, so no real detail is lost. The NAI visibility uses the fact that line of sight is symmetrical when eye and target are both 2 m: one pass from points in the NAI scores every possible OP position at once. Times on this workspace's CPU: about 0.2 s for the approach, 0.5–0.8 s for enemy OPs and 0.8 s for Template A, per enemy direction; about 3.5 s for all four directions in the browser, plus the time to fetch features. **Untested on a phone.**
+44. **Overpass is unreachable from the cloud workspace.** `overpass-api.de` is on the allowed list but drops every connection after about 2 s (probably refusing cloud-server traffic). The phone fetches features directly, so this only affects testing here. The feature code is unit-tested on hand-made features; it has **not yet been run on real OSM data**.
+45. **`?unchecked=1` (testing only)** lets a problem through when features could not be loaded; the problem then says plainly that public access has not been checked. Without it the gate always fails when access cannot be checked (core principle 4).
+
+### Tactical choices made provisionally — PO to confirm
+
+46. **PO – Going weights** (`GOING` in `src/features/layers.ts`), relative to open, level ground = 1: wood 6, scrub 2, marsh 10, built-up 3, water and buildings impassable; roads 0.25–0.4, tracks 0.6; stream ×3, hedge ×1.5, wall ×2.5, railway ×8; slopes over 6° cost up to 4×, over 20° impassable to vehicles; rivers impassable except at a road or track crossing. These assume a mechanised enemy.
+47. **PO – Enemy OP stand-off:** enemy OPs must be at least **500 m** in front of the box's centre line, not on top of our forward positions. Up to 6, at least 300 m apart; a position within 60 m of woods, scrub or buildings scores 15% higher.
+48. **PO – Template A thresholds** (`TEMPLATE_A` in `src/tactics/templateA.ts`): OPs in the forward 1.6 km of our half; an OP must see at least 30% of the NAI to count; gun areas at least 500 m behind the centre line, under 6°, out of view of every enemy OP for a 3 m vehicle, on open ground or scrub, at least **4 ha** in one piece; a line of communication is "long and exposed" above 1 km and 40% in view.
+49. **PO – Is "less exposed" enough of a difference?** The brief's dilemma test only needs the alternative OP to be seen by *fewer* enemy OPs. In testing this sometimes gave weak choices (seen by 5 of 6 versus 4 of 6).
+50. **PO – Problem wording** (`src/tactics/problem.ts`): the user is the Battery Commander of a close support battery; enemy armour; time allowed 30 minutes. A first draft for review.
+51. **Ranking between enemy directions** when more than one passes: a channelled NAI first, then the number of dilemmas, then the difference in exposure between the two OPs, then the share of the route on roads.

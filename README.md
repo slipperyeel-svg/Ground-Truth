@@ -2,7 +2,7 @@
 
 Phone web app that sets a tactical problem on the ground where you are standing. See the project brief for the full plan and `DECISIONS.md` for choices made so far.
 
-## Status: Milestone 2 (map view) complete
+## Status: Milestone 3 (Template A, feature-aware) built; awaiting product-owner testing
 
 ```
 npm install
@@ -48,6 +48,8 @@ On a phone the app must be served over HTTPS for location to work: use the inclu
 | `src/app/overlays.ts` | Hillshade, viewshed and contour layers for the map |
 | `src/geo/osTiles.ts` | Re-draws OS British National Grid tiles for the map |
 | `src/app/basemaps.ts` | OS and OpenStreetMap base maps |
+| `src/features/` | OpenStreetMap features (Overpass) and the grid layers made from them |
+| `src/tactics/` | Enemy approach and NAI, enemy OPs, Template A, the problem generator |
 | `src/main.ts` | The map screen |
 | `public/sw.js` | Offline cache |
 | `tests/` | Vitest unit tests |

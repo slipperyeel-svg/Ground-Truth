@@ -106,3 +106,53 @@ export function pointGeoJSON(lon: number, lat: number, props: Record<string, unk
 }
 
 export const EMPTY = { type: 'FeatureCollection' as const, features: [] };
+
+// ---------- tactical problem ----------
+type LL = { lat: number; lon: number };
+const ll = (centre: LL, p: { x: number; y: number }): [number, number] => {
+  const q = localToLatLon(centre, p.x, p.y);
+  return [q.lon, q.lat];
+};
+
+/** NAI circle and the enemy's expected route, shown with the problem. */
+export function problemGeoJSON(centre: LL, nai: { centre: { x: number; y: number }; radiusM: number }, route: { x: number; y: number }[]) {
+  const ring: [number, number][] = [];
+  for (let k = 0; k <= 48; k++) {
+    const a = (k / 48) * 2 * Math.PI;
+    ring.push(ll(centre, { x: nai.centre.x + nai.radiusM * Math.sin(a), y: nai.centre.y + nai.radiusM * Math.cos(a) }));
+  }
+  return {
+    type: 'FeatureCollection' as const,
+    features: [
+      { type: 'Feature' as const, properties: { kind: 'nai', label: 'NAI 1' }, geometry: { type: 'Polygon' as const, coordinates: [ring] } },
+      { type: 'Feature' as const, properties: { kind: 'route' }, geometry: { type: 'LineString' as const, coordinates: route.map((p) => ll(centre, p)) } },
+    ],
+  };
+}
+
+/** The DS solution: enemy OPs, the best and alternative OPs, gun areas and the line of communication. */
+export function dsGeoJSON(
+  centre: LL,
+  ds: { enemyOps: { x: number; y: number }[]; bestOP?: { x: number; y: number }; altOP?: { x: number; y: number };
+    concealedOP?: { x: number; y: number }; gunAreas: { x: number; y: number }[]; loc?: { x: number; y: number }[] },
+) {
+  const pt = (p: { x: number; y: number }, kind: string, label: string) => ({
+    type: 'Feature' as const,
+    properties: { kind, label },
+    geometry: { type: 'Point' as const, coordinates: ll(centre, p) },
+  });
+  const features: object[] = [];
+  ds.enemyOps.forEach((p, k) => features.push(pt(p, 'enemy', `En OP ${k + 1}`)));
+  if (ds.bestOP) features.push(pt(ds.bestOP, 'own', 'Best view'));
+  if (ds.altOP) features.push(pt(ds.altOP, 'own', 'Alternative'));
+  if (ds.concealedOP && ds.concealedOP !== ds.altOP) features.push(pt(ds.concealedOP, 'own', 'Unseen'));
+  ds.gunAreas.forEach((p, k) => features.push(pt(p, 'guns', `Gun area ${k + 1}`)));
+  if (ds.loc) {
+    features.push({
+      type: 'Feature',
+      properties: { kind: 'loc' },
+      geometry: { type: 'LineString', coordinates: ds.loc.map((p) => ll(centre, p)) },
+    });
+  }
+  return { type: 'FeatureCollection' as const, features };
+}

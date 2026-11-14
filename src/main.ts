@@ -5,6 +5,8 @@
  * Testing indoors: add ?demo=ridge (or cone, valley, flat) to the address to
  * use invented ground; ?lat=..&lon=.. to choose where; &autoload=1 to load
  * straight away; &vs=x,y to draw a viewshed from local metres x,y.
+ * &unchecked=1 (testing only) allows problems where public access could not
+ * be checked because map features failed to load; the problem says so.
  */
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, ImageSource, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
@@ -18,9 +20,11 @@ import {
   boxCorners,
   boxOutlineGeoJSON,
   contoursGeoJSON,
+  dsGeoJSON,
   EMPTY,
   hillshadeImage,
   pointGeoJSON,
+  problemGeoJSON,
   viewshedImage,
   type BoxGeo,
 } from './app/overlays';
@@ -28,7 +32,7 @@ import { gridRef, inGreatBritain } from './geo/gridref';
 import { BASE_MAPS, baseMapSources, OS_KEY, registerOsProtocol, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
-import type { DemoTerrain, LoadedGround } from './worker/protocol';
+import type { DemoTerrain, LoadedGround, ProblemView } from './worker/protocol';
 
 // ---------- state ----------
 const params = new URLSearchParams(location.search);
@@ -125,6 +129,8 @@ map.on('load', () => {
   map.addSource('box', { type: 'geojson', data: EMPTY });
   map.addSource('me', { type: 'geojson', data: EMPTY });
   map.addSource('tap', { type: 'geojson', data: EMPTY });
+  map.addSource('problem', { type: 'geojson', data: EMPTY });
+  map.addSource('ds', { type: 'geojson', data: EMPTY });
 
   map.addLayer({ id: 'hillshade', type: 'raster', source: 'hillshade', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'viewshed', type: 'raster', source: 'viewshed', paint: { 'raster-fade-duration': 0 } });
@@ -167,6 +173,40 @@ map.on('load', () => {
     paint: { 'text-color': '#1f5fa8', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
   });
   map.addLayer({ id: 'box', type: 'line', source: 'box', paint: { 'line-color': '#2f3a2a', 'line-width': 2, 'line-dasharray': [3, 2] } });
+  map.addLayer({
+    id: 'nai-fill', type: 'fill', source: 'problem', filter: ['==', ['get', 'kind'], 'nai'],
+    paint: { 'fill-color': '#e67800', 'fill-opacity': 0.35 },
+  });
+  map.addLayer({
+    id: 'nai-line', type: 'line', source: 'problem', filter: ['==', ['get', 'kind'], 'nai'],
+    paint: { 'line-color': '#b35c00', 'line-width': 2.5 },
+  });
+  map.addLayer({
+    id: 'enemy-route', type: 'line', source: 'problem', filter: ['==', ['get', 'kind'], 'route'],
+    paint: { 'line-color': '#c00', 'line-width': 2.5, 'line-dasharray': [2, 2] },
+  });
+  map.addLayer({
+    id: 'nai-label', type: 'symbol', source: 'problem', filter: ['==', ['get', 'kind'], 'nai'],
+    layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 14 },
+    paint: { 'text-color': '#7a3d00', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
+  map.addLayer({
+    id: 'ds-loc', type: 'line', source: 'ds', filter: ['==', ['get', 'kind'], 'loc'],
+    paint: { 'line-color': '#2e7d32', 'line-width': 2, 'line-dasharray': [1, 1.5] },
+  });
+  map.addLayer({
+    id: 'ds-points', type: 'circle', source: 'ds', filter: ['!=', ['get', 'kind'], 'loc'],
+    paint: {
+      'circle-radius': 7,
+      'circle-color': ['match', ['get', 'kind'], 'enemy', '#c00', 'own', '#1a73e8', 'guns', '#2e7d32', '#888'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 2,
+    },
+  });
+  map.addLayer({
+    id: 'ds-labels', type: 'symbol', source: 'ds', filter: ['!=', ['get', 'kind'], 'loc'],
+    layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
   map.addLayer({
     id: 'me',
     type: 'circle',
@@ -223,7 +263,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-centre', 'btn-vs-me']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-centre', 'btn-vs-me', 'btn-problem']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 async function loadGround(lat: number, lon: number) {
@@ -260,6 +300,8 @@ async function loadGround(lat: number, lon: number) {
       `Source: ${m.source}. Data resolution about ${Math.round(m.sourceResolutionM)} m. ${m.notes.join(' ')}`;
     $('ground-info').hidden = false;
     $('vs-block').hidden = false;
+    clearProblem();
+    $('problem-block').hidden = false;
     status(`Ground loaded · ${gridRef(lat, lon).ref}`);
     showPosition();
 
@@ -274,6 +316,71 @@ async function loadGround(lat: number, lon: number) {
     setBusy(false);
   }
 }
+
+// ---------- tactical problem ----------
+let problem: ProblemView | null = null;
+
+function clearProblem() {
+  problem = null;
+  $('problem').hidden = true;
+  $('pr-ds').hidden = true;
+  $('btn-ds').hidden = true;
+  $('pr-log').hidden = true;
+  $('pr-features').textContent = '';
+  (map.getSource('problem') as GeoJSONSource | undefined)?.setData(EMPTY);
+  (map.getSource('ds') as GeoJSONSource | undefined)?.setData(EMPTY);
+}
+
+function fillList(id: string, items: string[]) {
+  const el = $(id);
+  el.replaceChildren(...items.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+}
+
+async function setProblem() {
+  if (!box) return;
+  clearProblem();
+  setBusy(true);
+  status('Reading the ground…');
+  try {
+    problem = await engine.problem(status, params.get('unchecked') === '1');
+    $('pr-features').textContent = problem.featureNote;
+    fillList('pr-log-list', problem.log);
+    $('pr-log').hidden = false;
+    if (!problem.found || !problem.text) {
+      status('No good problem on this ground');
+      $('pr-features').textContent =
+        `${problem.featureNote} This ground offers no problem with a real dilemma that passes the quality gate. ` +
+        'Try loading ground a little way off. See below for why.';
+      return;
+    }
+    const t = problem.text;
+    $('pr-title').textContent = t.title;
+    $('pr-gs').textContent = t.generalSituation;
+    $('pr-ss').textContent = t.specialSituation;
+    fillList('pr-req', t.requirement);
+    $('pr-time').textContent = t.timeAllowed;
+    fillList('pr-ds-list', t.dsNotes);
+    $('pr-data').textContent = t.dataNote;
+    $('problem').hidden = false;
+    $('btn-ds').hidden = false;
+    ($('btn-ds') as HTMLButtonElement).textContent = 'Show DS solution';
+    (map.getSource('problem') as GeoJSONSource).setData(problemGeoJSON(box.centre, problem.nai!, problem.route ?? []) as never);
+    status(`Problem set (${(problem.timeMs / 1000).toFixed(1)} s)`);
+  } catch (err) {
+    status(`Could not set a problem: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$('btn-problem').addEventListener('click', () => void setProblem());
+$('btn-ds').addEventListener('click', () => {
+  if (!problem?.ds || !box) return;
+  const showing = !$('pr-ds').hidden;
+  $('pr-ds').hidden = showing;
+  (map.getSource('ds') as GeoJSONSource).setData(showing ? EMPTY : (dsGeoJSON(box.centre, problem.ds) as never));
+  ($('btn-ds') as HTMLButtonElement).textContent = showing ? 'Show DS solution' : 'Hide DS solution';
+});
 
 // ---------- viewshed ----------
 async function runViewshed(x: number, y: number) {
