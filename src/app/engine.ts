@@ -1,7 +1,7 @@
 /**
  * The page's handle on the analysis worker: each request returns a promise.
  */
-import type { DemoTerrain, LoadedGround, ProblemView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
+import type { DemoTerrain, FeaturesView, LoadedGround, ProblemView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -27,6 +27,7 @@ export class Engine {
       else if (msg.type === 'loaded') p.resolve(msg.ground);
       else if (msg.type === 'viewshed') p.resolve(msg.result);
       else if (msg.type === 'problem') p.resolve(msg.result);
+      else if (msg.type === 'features') p.resolve(msg.result);
     };
   }
 
@@ -48,6 +49,11 @@ export class Engine {
       { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo },
       onProgress,
     );
+  }
+
+  /** Fetch the map features for the loaded ground and draw them. */
+  features(onProgress?: (m: string) => void): Promise<FeaturesView> {
+    return this.request<FeaturesView>({ type: 'features' }, onProgress);
   }
 
   /** Read the map features and set a tactical problem on the loaded ground. */

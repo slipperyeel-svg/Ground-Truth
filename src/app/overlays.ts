@@ -20,7 +20,7 @@ export function boxCorners(b: BoxGeo): [[number, number], [number, number], [num
   return [c(-h, h), c(h, h), c(h, -h), c(-h, -h)];
 }
 
-function toDataURL(width: number, height: number, rgba: Uint8ClampedArray): string {
+export function toDataURL(width: number, height: number, rgba: Uint8ClampedArray): string {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

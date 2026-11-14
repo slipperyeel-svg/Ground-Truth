@@ -78,3 +78,8 @@ select { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var
 .sw.enemy { background: #c00; }
 .sw.own { background: #1a73e8; }
 .sw.guns { background: #2e7d32; }
+
+/* Features */
+.feat-row { margin-top: 8px; }
+.legend.wrap { flex-wrap: wrap; gap: 4px 12px; }
+.legend.wrap > span { display: inline-flex; align-items: center; gap: 4px; }

@@ -28,6 +28,11 @@ export type WorkerRequest =
       maxRangeM: number;
     }
   | {
+      /** Fetch the map features for the loaded ground and draw them. */
+      type: 'features';
+      id: number;
+    }
+  | {
       /** Read the features of the loaded ground and set a tactical problem on it. */
       type: 'problem';
       id: number;
@@ -53,6 +58,15 @@ export interface ViewshedResult {
   observerGroundM: number;
   visibleShare: number; // share of cells in range that are visible
   timeMs: number;
+}
+
+/** The captured map features, drawn as a see-through picture over the box. */
+export interface FeaturesView {
+  ok: boolean;
+  /** What was loaded, or why it failed. */
+  note: string;
+  /** RGBA picture, width × height of the grid (only if ok). */
+  image?: Uint8ClampedArray;
 }
 
 /** A problem, ready to show. Positions are local metres from the box centre. */
@@ -82,4 +96,5 @@ export type WorkerResponse =
   | { type: 'loaded'; id: number; ground: LoadedGround }
   | { type: 'viewshed'; id: number; result: ViewshedResult }
   | { type: 'problem'; id: number; result: ProblemView }
+  | { type: 'features'; id: number; result: FeaturesView }
   | { type: 'error'; id: number; message: string };

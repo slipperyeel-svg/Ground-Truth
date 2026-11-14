@@ -25,6 +25,7 @@ import {
   hillshadeImage,
   pointGeoJSON,
   problemGeoJSON,
+  toDataURL,
   viewshedImage,
   type BoxGeo,
 } from './app/overlays';
@@ -120,6 +121,7 @@ map.on('load', () => {
   document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
   map.addSource('hillshade', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('viewshed', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
+  map.addSource('features', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('contours', {
     type: 'geojson',
     data: EMPTY,
@@ -133,6 +135,7 @@ map.on('load', () => {
   map.addSource('ds', { type: 'geojson', data: EMPTY });
 
   map.addLayer({ id: 'hillshade', type: 'raster', source: 'hillshade', paint: { 'raster-fade-duration': 0 } });
+  map.addLayer({ id: 'features', type: 'raster', source: 'features', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'viewshed', type: 'raster', source: 'viewshed', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({
     id: 'contours',
@@ -263,7 +266,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-centre', 'btn-vs-me', 'btn-problem']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-centre', 'btn-vs-me', 'btn-problem', 'btn-features']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 async function loadGround(lat: number, lon: number) {
@@ -301,6 +304,7 @@ async function loadGround(lat: number, lon: number) {
     $('ground-info').hidden = false;
     $('vs-block').hidden = false;
     clearProblem();
+    clearFeatures();
     $('problem-block').hidden = false;
     status(`Ground loaded · ${gridRef(lat, lon).ref}`);
     showPosition();
@@ -316,6 +320,48 @@ async function loadGround(lat: number, lon: number) {
     setBusy(false);
   }
 }
+
+// ---------- map features ----------
+let featuresShown = false;
+
+function clearFeatures() {
+  featuresShown = false;
+  if (box) (map.getSource('features') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
+  $('feat-legend').hidden = true;
+  $('feat-note').textContent = '';
+  ($('btn-features') as HTMLButtonElement).textContent = 'Show features';
+}
+
+async function toggleFeatures() {
+  if (!box || !ground) return;
+  if (featuresShown) {
+    clearFeatures();
+    return;
+  }
+  setBusy(true);
+  try {
+    const f = await engine.features(status);
+    $('feat-note').textContent = f.note;
+    if (!f.ok || !f.image) {
+      status('Map features not available');
+      return;
+    }
+    (map.getSource('features') as ImageSource).updateImage({
+      url: toDataURL(ground.width, ground.height, f.image),
+      coordinates: boxCorners(box),
+    });
+    featuresShown = true;
+    $('feat-legend').hidden = false;
+    ($('btn-features') as HTMLButtonElement).textContent = 'Hide features';
+    status('Features shown');
+  } catch (err) {
+    status(`Could not load features: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$('btn-features').addEventListener('click', () => void toggleFeatures());
 
 // ---------- tactical problem ----------
 let problem: ProblemView | null = null;

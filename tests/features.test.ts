@@ -157,3 +157,21 @@ describe('feature layers', () => {
     expect(Ls.going[at(steep, { x: 0, y: 250 })]).toBe(Infinity);
   });
 });
+
+describe('feature picture', () => {
+  it('colours woods, roads and paths, and leaves open ground clear', async () => {
+    const { featureImage, FEATURE_COLOURS } = await import('../src/features/render');
+    const g = flatPlane(1000, 10);
+    const L = buildLayers(g, set([
+      feature({ kind: 'wood', shape: 'area', rings: [square(-300, 300, 100)] }),
+      feature({ kind: 'minor-road', shape: 'line', rings: [[{ x: -500, y: -200 }, { x: 500, y: -200 }]] }),
+      feature({ kind: 'path', shape: 'line', rings: [[{ x: 200, y: -500 }, { x: 200, y: 500 }]] }),
+    ]));
+    const img = featureImage(g.width, g.height, L);
+    const px = (p: Point) => Array.from(img.slice(at(g, p) * 4, at(g, p) * 4 + 4));
+    expect(px({ x: -300, y: 300 })).toEqual(FEATURE_COLOURS.wood);
+    expect(px({ x: -400, y: -200 })).toEqual(FEATURE_COLOURS.minorRoad);
+    expect(px({ x: 200, y: 300 })).toEqual(FEATURE_COLOURS.path);
+    expect(px({ x: 400, y: 400 })[3]).toBe(0); // open ground: transparent
+  });
+});

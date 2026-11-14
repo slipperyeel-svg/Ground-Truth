@@ -84,3 +84,9 @@ The engine now reads the features of the ground as well as its shape, finds the 
 49. **PO – Is "less exposed" enough of a difference?** The brief's dilemma test only needs the alternative OP to be seen by *fewer* enemy OPs. In testing this sometimes gave weak choices (seen by 5 of 6 versus 4 of 6).
 50. **PO – Problem wording** (`src/tactics/problem.ts`): the user is the Battery Commander of a close support battery; enemy armour; time allowed 30 minutes. A first draft for review.
 51. **Ranking between enemy directions** when more than one passes: a channelled NAI first, then the number of dilemmas, then the difference in exposure between the two OPs, then the share of the route on roads.
+
+## Features display (14 Nov 2026)
+
+52. **PO: excluded areas are not a concern.** "I trust users not to be stupid in that regard." The features display therefore shows only the features themselves (woods, scrub, water, marsh, built-up areas, buildings, roads, tracks, paths, rivers and streams, hedges, railways), not exclusions or where a stand may go. The quality gate's public-access check (DECISIONS.md 45, CLAUDE.md principle 4) is left in the code for now, since problems are paused; **revisit it with the PO before problems resume.**
+53. **"Show features"** fetches the OSM features for the loaded box once (shared with "Set a problem") and draws the engine's own grid layers as a see-through picture, so what you see is exactly what the engine will use. Lines are drawn at their analysis width (e.g. a minor road 10 m wide), so they look thin when zoomed out.
+54. **OSM completeness varies.** Hedges, walls and small paths are often unmapped in OSM, especially in farmland; woods and roads are usually good. Anything missing in OSM is missing to the engine.

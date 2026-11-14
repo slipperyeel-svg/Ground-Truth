@@ -16,7 +16,8 @@ import {
 import { contours, chooseInterval } from '../terrain/contours';
 import { coneHill, convexRidge, flatPlane, fromFunction, vValley } from '../terrain/synthetic';
 import { browserTileSource } from '../terrain/tiles-browser';
-import type { DemoTerrain, ProblemView, WorkerRequest, WorkerResponse } from './protocol';
+import type { DemoTerrain, FeaturesView, ProblemView, WorkerRequest, WorkerResponse } from './protocol';
+import { featureImage } from '../features/render';
 import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
 import { generateProblem } from '../tactics/problem';
@@ -60,6 +61,24 @@ function demoGrid(kind: DemoTerrain, sizeM: number, cellM: number, lat: number, 
     centre: { lat, lon },
   };
   return g;
+}
+
+/** Fetch and draw the map features for the loaded ground, once per box. */
+async function ensureLayers(progress: (m: string) => void): Promise<void> {
+  if (!grid || isDemo || layers) return;
+  progress('Fetching roads, woods, water and paths from OpenStreetMap…');
+  try {
+    const fs = await fetchFeatures(grid.meta.centre!, grid.width * grid.cellM);
+    layers = buildLayers(grid, fs);
+    const c = layers.counts;
+    const roads = (c['major-road'] ?? 0) + (c['minor-road'] ?? 0) + (c.motorway ?? 0);
+    featureNote =
+      `From OpenStreetMap: ${roads} roads, ${c.track ?? 0} tracks, ${c.path ?? 0} paths, ` +
+      `${c.wood ?? 0} woods, ${c.scrub ?? 0} areas of scrub, ${(c.water ?? 0) + (c.river ?? 0) + (c.stream ?? 0)} water features, ` +
+      `${c.hedge ?? 0} hedges, ${c['built-up'] ?? 0} built-up areas, ${c.building ?? 0} buildings, ${c.railway ?? 0} railway lines.`;
+  } catch (err) {
+    featureNote = `Map features could not be loaded: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
@@ -124,23 +143,20 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         },
         [mask.buffer],
       );
+    } else if (req.type === 'features') {
+      if (!grid) throw new Error('No ground loaded yet');
+      const progress = (message: string) => post({ type: 'progress', id: req.id, message });
+      await ensureLayers(progress);
+      let view: FeaturesView;
+      if (isDemo) view = { ok: false, note: 'Demo ground has no map features.' };
+      else if (!layers) view = { ok: false, note: featureNote };
+      else view = { ok: true, note: featureNote, image: featureImage(grid.width, grid.height, layers) };
+      post({ type: 'features', id: req.id, result: view }, view.image ? [view.image.buffer] : []);
     } else if (req.type === 'problem') {
       if (!grid) throw new Error('No ground loaded yet');
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });
       const t0 = performance.now();
-      if (!isDemo && !layers) {
-        progress('Fetching roads, woods, water and paths from OpenStreetMap…');
-        try {
-          const fs = await fetchFeatures(grid.meta.centre!, grid.width * grid.cellM);
-          layers = buildLayers(grid, fs);
-          const c = layers.counts;
-          const roads = (c['major-road'] ?? 0) + (c['minor-road'] ?? 0) + (c.motorway ?? 0);
-          featureNote = `Map features loaded from OpenStreetMap: ${roads} roads, ${c.track ?? 0} tracks, ${c.path ?? 0} paths, ` +
-            `${c.wood ?? 0} woods, ${(c.water ?? 0) + (c.river ?? 0) + (c.stream ?? 0)} water features, ${c.building ?? 0} buildings.`;
-        } catch (err) {
-          featureNote = `Map features could not be loaded (${err instanceof Error ? err.message : String(err)}), so public access cannot be checked.`;
-        }
-      }
+      await ensureLayers(progress);
       if (isDemo) featureNote = 'Demo ground: no map features. Public access is not checked.';
       const out = generateProblem(grid, { layers, requireAccessCheck: !isDemo && !req.allowUnchecked, progress });
       const p = out.problem;

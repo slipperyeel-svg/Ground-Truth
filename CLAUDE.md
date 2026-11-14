@@ -13,7 +13,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 1. **Terrain facts are computed, never guessed.** Viewsheds, dead ground, slope and distances come from elevation data and geometry. An LLM may later write prose and critique answers, using only the computed facts it is given. It never decides what can be seen from where.
 2. **Every problem has a real dilemma.** A problem with one obvious answer is a failure. The quality gate must reject it before the user sees it.
 3. **Be honest about data resolution.** Show the data source and resolution on every problem, and pick an echelon the data can support. The default data (about 30 m) does not show hedges, walls, sunken lanes or small folds.
-4. **Never send people onto private land or into danger.** Stands go only on public paths or open-access land. Exclude military ranges, railways, motorways, water and cliff edges.
+4. **Never send people onto private land or into danger.** Stands go only on public paths or open-access land. Exclude military ranges, railways, motorways, water and cliff edges. *(PO, 14 Nov 2026: not a concern for him — he trusts users. The display no longer shows exclusions; revisit the gate's access check before problems resume. DECISIONS.md 52.)*
 5. **British military terminology and British English** (dead ground, OP, gun area, grid reference, reverse slope, NAI, battery, manoeuvre).
 
 ---
@@ -93,6 +93,7 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/app/basemaps.ts` | OS Explorer, OS Outdoor and OpenStreetMap; registers the `os27700://` protocol |
 | `src/features/osm.ts` | Overpass query; OSM tags → feature kinds; parse to local metres |
 | `src/features/layers.ts` | Features → grid layers: land cover, routes, going, exclusions, stand-allowed cells |
+| `src/features/render.ts` | Draws the captured features as a see-through map picture ("Show features") |
 | `src/tactics/approach.ts` | Least-cost enemy approach, corridor, NAI and what channels it |
 | `src/tactics/enemyOps.ts` | Likely enemy OPs: best viewpoints on the enemy side |
 | `src/tactics/templateA.ts` | Template A: OP candidates, gun areas, line of communication, dilemma test, quality gate |
