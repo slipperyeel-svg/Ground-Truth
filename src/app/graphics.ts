@@ -64,15 +64,30 @@ export function objective(c: LL, p: Point, r = 150, name = 'OBJ'): Feature[] {
  */
 export function controlLine(c: LL, kind: 'boundary' | 'phaseLine', path: Point[], text: string, sides?: [string, string]): Feature[] {
   const a = path[0], b = path[path.length - 1];
-  const d = unit(a, b), n = perp(d);
+  const d = unit(a, b);
   const out: Feature[] = [line(c, path, { kind, side: 'friend' })];
   if (kind === 'boundary') {
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    out.push(label(c, mid, text, { side: 'friend', big: true }));
-    // perp(d) points to the right of the line's direction (which runs forward); sides = [left, right].
+    // APP-6 boundary: the echelon mark (one bar per "I": company I, battalion II)
+    // crosses the line at right angles halfway along it, with the units' names
+    // either side of the line at the mark (PO, 15 Nov 2026).
+    const lens = path.slice(1).map((q, k) => Math.hypot(q.x - path[k].x, q.y - path[k].y));
+    const total = lens.reduce((s, x) => s + x, 0);
+    let k = 0, run = 0;
+    while (k < lens.length - 1 && run + lens[k] < total / 2) run += lens[k++];
+    const t = lens[k] ? (total / 2 - run) / lens[k] : 0;
+    const mid = { x: path[k].x + (path[k + 1].x - path[k].x) * t, y: path[k].y + (path[k + 1].y - path[k].y) * t };
+    // The line's own direction at the mark, over about 100 m either side.
+    const before = path[Math.max(0, k - 3)], after = path[Math.min(path.length - 1, k + 4)];
+    const dm = unit(before, after), nm = perp(dm);
+    const bars = Math.max(1, (text.match(/I/g) ?? []).length);
+    for (let j = 0; j < bars; j++) {
+      const at = add(mid, dm, (j - (bars - 1) / 2) * 25);
+      out.push(line(c, [add(at, nm, -80), add(at, nm, 80)], { kind, side: 'friend' }));
+    }
+    // perp() points to the right of the line's direction (which runs forward); sides = [left, right].
     if (sides) {
-      out.push(label(c, add(mid, n, -90), sides[0], { side: 'friend' }));
-      out.push(label(c, add(mid, n, 90), sides[1], { side: 'friend' }));
+      out.push(label(c, add(mid, nm, -140), sides[0], { side: 'friend' }));
+      out.push(label(c, add(mid, nm, 140), sides[1], { side: 'friend' }));
     }
   } else {
     out.push(label(c, add(a, d, 120), text, { side: 'friend' }), label(c, add(b, d, -120), text, { side: 'friend' }));
