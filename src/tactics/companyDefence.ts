@@ -137,7 +137,7 @@ export interface CompanyLayout {
   maskWidth: number;
   maskHeight: number;
   maskCellM: number;
-  /** How many real positions cover each cell with fire (in front of each position); 2+ = interlocking. */
+  /** How many real positions cover each cell with fire (all round, within gun range); 2+ = interlocking. */
   killZone: Uint8Array;
   /** Ground within 300 m in front of the forward positions that no position can see. */
   deadGround: Mask;
@@ -486,7 +486,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   const men = options.dispersed ? 3 : 8;
   forwardOrder.forEach((idx, k) => {
     const picks = fwdPicks[idx];
-    const name = `${k + 1} Pl`;
+    const name = `En ${k + 1} Pl`;
     const positions: EnemyPosition[] = picks.map((c, j) => ({
       kind: options.dispersed ? 'team' : 'section', platoon: name, label: `${name} ${posLabel(j)}`, point: c.p, men,
     }));
@@ -504,9 +504,9 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   });
   if (depthCentre) {
     platoons.push({
-      name: '3 Pl', role: 'depth', centre: depthCentre.p, reverseSlope: depthPicks[0]?.reverse ?? false,
+      name: 'En 3 Pl', role: 'depth', centre: depthCentre.p, reverseSlope: depthPicks[0]?.reverse ?? false,
       outline: outline(depthCentre.p, u, C.platoonFrontM, C.platoonDepthM),
-      positions: depthPicks.map((c, j) => ({ kind: options.dispersed ? 'team' : 'section', platoon: '3 Pl', label: `3 Pl ${posLabel(j)}`, point: c.p, men })),
+      positions: depthPicks.map((c, j) => ({ kind: options.dispersed ? 'team' : 'section', platoon: 'En 3 Pl', label: `En 3 Pl ${posLabel(j)}`, point: c.p, men })),
     });
   }
   const real = platoons.flatMap((p) => p.positions);
@@ -555,9 +555,9 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   for (const r of fighting) {
     const vs = viewshed(cg, r.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: spec.gunRangeM, obstacles: ctx.obstacles });
     views.push({ p: r.point, vs, total: 0, reverse: false });
-    const fr = fwd(ctx, r.point);
+    // Russian strongpoints are built for all-round defence: count fire in every direction.
     for (let i = 0; i < N; i++) {
-      if (!vs[i] || F[i] > fr) continue;
+      if (!vs[i]) continue;
       if (killZone[i] < 255) killZone[i]++;
       if ((X[i] - r.point.x) ** 2 + (Y[i] - r.point.y) ** 2 <= r2) seen300[i] = 1;
     }
@@ -660,7 +660,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   );
   if (gaps[0]) {
     reasons.push(
-      `Gap between 1 and 2 Pl: about ${Math.round(gaps[0].widthM)} m between their nearest positions. Of the ground within 150 m of its centre, ` +
+      `Gap between En 1 and En 2 Pl: about ${Math.round(gaps[0].widthM)} m between their nearest positions. Of the ground within 150 m of its centre, ` +
         `the depth platoon sees ${pct(gaps[0].coveredFromDepth)} and the company as a whole ${pct(gaps[0].coveredByAny)}.` +
         (gaps[0].coveredByAny < 0.5 ? ' The gap is poorly covered by fire: a weakness in this defence.' : ''),
     );

@@ -46,9 +46,9 @@
         <div id="pt-ref" class="gr"></div>
         <div id="pt-detail" class="detail"></div>
         <div class="row buttons">
-          <button id="btn-pt-company" class="primary">Enemy company here</button>
+          <button id="btn-pt-problem" class="primary">Set a problem here</button>
+          <button id="btn-pt-company">Enemy company here</button>
           <button id="btn-pt-section">Enemy section here</button>
-          <button id="btn-pt-problem">Set a problem here</button>
           <button id="btn-pt-vs">Viewshed from here</button>
           <button id="btn-pt-clear">Clear</button>
         </div>
@@ -77,6 +77,80 @@
           <span><span class="sw" style="background:rgb(20,20,20)"></span> railway</span>
         </div>
         <div id="feat-note" class="source"></div>
+      </div>
+
+      <div id="scenario-block" class="block" hidden>
+        <div class="label">Tactical problem</div>
+        <div class="row selects">
+          <label>Task
+            <select id="sel-task">
+              <option value="" selected>Generator decides</option>
+              <option value="secure">Secure ground beyond</option>
+              <option value="neutralise">Neutralise enemy in an area</option>
+              <option value="findFix">Find and fix</option>
+              <option value="screen">Screen a flank</option>
+            </select>
+          </label>
+          <label>Information
+            <select id="sel-info">
+              <option value="" selected>Generator decides</option>
+              <option value="rich">Rich</option>
+              <option value="partial">Partial</option>
+              <option value="poor">Poor</option>
+            </select>
+          </label>
+        </div>
+        <div class="row buttons">
+          <button id="btn-sc-new">New problem</button>
+        </div>
+        <div id="sc" hidden>
+          <h2 id="sc-title"></h2>
+          <p id="sc-you"></p>
+          <table id="sc-force" class="force"></table>
+          <h3>Situation</h3>
+          <p id="sc-situation"></p>
+          <h3>Your task</h3>
+          <p id="sc-task"></p>
+          <h3>Enemy</h3>
+          <ul id="sc-enemy"></ul>
+          <p id="sc-gaps" class="detail"></p>
+          <h3>Time and light</h3>
+          <p id="sc-time"></p>
+          <h3>Ground</h3>
+          <ul id="sc-ground"></ul>
+          <h3>Own troops</h3>
+          <p id="sc-own"></p>
+          <h3>Weather</h3>
+          <p id="sc-weather"></p>
+          <h3>Requirement</h3>
+          <ol id="sc-q"></ol>
+          <p id="sc-allowed" class="detail"></p>
+          <div class="row buttons">
+            <button id="btn-sc-develop" class="primary">The situation develops</button>
+            <button id="btn-sc-ds">Show DS solution</button>
+          </div>
+          <div id="sc-phase2" hidden>
+            <h3>The situation develops</h3>
+            <p id="sc-p2time"></p>
+            <ul id="sc-p2msgs" class="messages"></ul>
+            <ol id="sc-p2q"></ol>
+          </div>
+          <div id="sc-ds" hidden>
+            <h3>DS solution (computed facts)</h3>
+            <div class="legend wrap">
+              <span><span class="sw" style="background:#c00"></span> enemy position</span>
+              <span><span class="sw" style="background:#fff;border:2px dashed #c00"></span> dummy</span>
+              <span><span class="sw" style="background:#e8a000"></span> outpost</span>
+              <span><span class="sw" style="background:rgba(200,60,0,0.7)"></span> interlocking fire</span>
+              <span><span class="sw" style="background:rgba(40,90,220,0.55)"></span> dead ground</span>
+              <span><span class="sw" style="background:#c62828"></span> obvious route</span>
+              <span><span class="sw" style="background:#2e7d32"></span> best covered route</span>
+            </div>
+            <ul id="sc-ds-list"></ul>
+          </div>
+          <p id="sc-data" class="source"></p>
+        </div>
+        <div id="sc-note" class="source"></div>
       </div>
 
       <div id="company-block" class="block" hidden>

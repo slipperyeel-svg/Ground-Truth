@@ -109,3 +109,14 @@ button.floating {
 .ctrl-crosshair button.on { background: var(--olive); color: #fff; }
 
 #co-notes { padding-left: 20px; margin: 4px 0; font-size: 14px; line-height: 1.4; }
+
+/* Scenario */
+#sc h2 { font-size: 17px; margin: 10px 0 4px; }
+#sc h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 12px 0 2px; }
+#sc p, #sc li { font-size: 15px; line-height: 1.4; margin: 2px 0; }
+#sc ul, #sc ol { padding-left: 20px; margin: 4px 0; }
+table.force { border-collapse: collapse; font-size: 14px; margin: 6px 0; }
+table.force td { border-top: 1px solid #d8d3c4; padding: 3px 8px 3px 0; vertical-align: top; }
+table.force td:first-child { font-weight: 600; white-space: nowrap; }
+ul.messages li { list-style: none; margin-left: -20px; padding: 4px 0; border-top: 1px dashed #d8d3c4; }
+.rel { font-size: 12px; color: var(--muted); }

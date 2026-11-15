@@ -234,3 +234,18 @@ export function companyZonesImage(width: number, height: number, killZone: Uint8
     }
   return toDataURL(width, height, rgba);
 }
+
+// ---------- infantry scenario ----------
+
+/** The obvious route (red, dashed), the best covered route (green) and the objective (blue ring). */
+export function scenarioGeoJSON(
+  centre: LL,
+  s: { objective: P; direct: { path: P[] } | null; covered: { path: P[] } | null },
+) {
+  const features: object[] = [
+    { type: 'Feature', properties: { kind: 'objective', label: 'Objective' }, geometry: { type: 'Point', coordinates: ll(centre, s.objective) } },
+  ];
+  if (s.direct) features.push({ type: 'Feature', properties: { kind: 'direct' }, geometry: { type: 'LineString', coordinates: s.direct.path.map((p) => ll(centre, p)) } });
+  if (s.covered) features.push({ type: 'Feature', properties: { kind: 'covered' }, geometry: { type: 'LineString', coordinates: s.covered.path.map((p) => ll(centre, p)) } });
+  return { type: 'FeatureCollection' as const, features };
+}

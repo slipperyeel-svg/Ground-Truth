@@ -27,6 +27,7 @@ import {
   sectionZonesImage,
   companyGeoJSON,
   companyZonesImage,
+  scenarioGeoJSON,
   toDataURL,
   viewshedImage,
   type BoxGeo,
@@ -35,8 +36,9 @@ import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
-import type { CompanyView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
+import type { CompanyView, ScenarioView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
 import type { CompanyOptions } from './tactics/companyDefence';
+import type { InfoLevel, TaskType } from './tactics/platoonScenario';
 import type { Intel, Posture } from './tactics/sectionDefence';
 
 // ---------- state ----------
@@ -149,6 +151,7 @@ map.on('load', () => {
   map.addSource('section-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('company-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('company', { type: 'geojson', data: EMPTY });
+  map.addSource('scenario', { type: 'geojson', data: EMPTY });
   map.addSource('section', { type: 'geojson', data: EMPTY });
   map.addSource('contours', {
     type: 'geojson',
@@ -239,6 +242,18 @@ map.on('load', () => {
     id: 'ds-labels', type: 'symbol', source: 'ds', filter: ['!=', ['get', 'kind'], 'loc'],
     layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
+  map.addLayer({
+    id: 'scenario-routes', type: 'line', source: 'scenario', filter: ['match', ['get', 'kind'], ['direct', 'covered'], true, false],
+    paint: {
+      'line-color': ['match', ['get', 'kind'], 'direct', '#c62828', '#2e7d32'],
+      'line-width': 3,
+      'line-dasharray': ['match', ['get', 'kind'], 'direct', ['literal', [2, 1.5]], ['literal', [1, 0]]],
+    },
+  });
+  map.addLayer({
+    id: 'scenario-objective', type: 'circle', source: 'scenario', filter: ['==', ['get', 'kind'], 'objective'],
+    paint: { 'circle-radius': 9, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1a73e8', 'circle-stroke-width': 3 },
   });
   map.addLayer({
     id: 'company-areas', type: 'line', source: 'company', filter: ['==', ['get', 'kind'], 'area'],
@@ -346,7 +361,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new', 'btn-sc-new']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
@@ -394,7 +409,8 @@ async function loadGround(lat: number, lon: number, detail: Detail = chosenDetai
     clearFeatures();
     clearSection();
     clearCompany();
-    $('problem-block').hidden = false;
+    // The artillery problem panel stays hidden (kept for a possible artillery problem type).
+    clearScenario();
     status(`Ground loaded · ${gridRef(lat, lon).ref}`);
     showPosition();
 
@@ -451,6 +467,108 @@ async function toggleFeatures() {
 }
 
 $('btn-features').addEventListener('click', () => void toggleFeatures());
+
+// ---------- infantry platoon scenario ----------
+let scenario: ScenarioView | null = null;
+
+function clearScenario() {
+  scenario = null;
+  $('sc').hidden = true;
+  $('sc-phase2').hidden = true;
+  $('sc-ds').hidden = true;
+  $('sc-note').textContent = '';
+  if (box) (map.getSource('company-zones') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
+  (map.getSource('company') as GeoJSONSource | undefined)?.setData(EMPTY);
+  (map.getSource('scenario') as GeoJSONSource | undefined)?.setData(EMPTY);
+}
+
+function el(tag: string, text: string, cls?: string) {
+  const e = document.createElement(tag);
+  e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+function showScenario() {
+  const s = scenario?.scenario;
+  if (!s) return;
+  $('sc-title').textContent = s.title;
+  $('sc-you').textContent = s.you;
+  $('sc-force').replaceChildren(...s.force.map((f) => {
+    const tr = document.createElement('tr');
+    tr.append(el('td', f.element), el('td', f.detail));
+    return tr;
+  }));
+  $('sc-situation').textContent = s.situation;
+  $('sc-task').textContent = s.task_text;
+  $('sc-enemy').replaceChildren(...s.enemy.map((e) => {
+    const li = el('li', e.text + ' ');
+    li.append(el('span', `(${e.source}; reliability ${e.reliability})`, 'rel'));
+    return li;
+  }));
+  $('sc-gaps').textContent = `Not known: ${s.enemyGaps}`;
+  $('sc-time').textContent = s.time;
+  fillList('sc-ground', s.ground);
+  $('sc-own').textContent = s.ownTroops;
+  $('sc-weather').textContent = s.weather;
+  fillList('sc-q', s.questions);
+  $('sc-allowed').textContent = `Time allowed: ${s.timeAllowed}`;
+  $('sc-p2time').textContent = s.phase2.time;
+  $('sc-p2msgs').replaceChildren(...s.phase2.messages.map((m) => el('li', `${m.time}, from ${m.from}: "${m.text}"`)));
+  fillList('sc-p2q', s.phase2.questions);
+  fillList('sc-ds-list', [...s.ds, `Data: ${s.dataNote}`]);
+  $('sc-data').textContent = s.dataNote;
+  $('sc').hidden = false;
+}
+
+function showScenarioDS(show: boolean) {
+  const v = scenario;
+  if (!box || !v?.company || !v.scenario) return;
+  const c = v.company;
+  $('sc-ds').hidden = !show;
+  ($('btn-sc-ds') as HTMLButtonElement).textContent = show ? 'Hide DS solution' : 'Show DS solution';
+  (map.getSource('company-zones') as ImageSource).updateImage({
+    url: show ? companyZonesImage(c.maskWidth!, c.maskHeight!, c.killZone!, c.deadGround!, c.mines ?? null) : BLANK,
+    coordinates: boxCorners(box),
+  });
+  (map.getSource('company') as GeoJSONSource).setData(
+    show ? (companyGeoJSON(box.centre, { platoons: c.platoons!, hq: c.hq, dummies: c.dummies, gaps: c.gaps, routes: [] }) as never) : EMPTY,
+  );
+  (map.getSource('scenario') as GeoJSONSource).setData(show ? (scenarioGeoJSON(box.centre, v.scenario) as never) : EMPTY);
+}
+
+async function runScenario(seed: number) {
+  if (!box) return;
+  clearScenario();
+  clearCompany();
+  $('scenario-block').hidden = false;
+  setBusy(true);
+  try {
+    const task = ($('sel-task') as HTMLSelectElement).value as TaskType | '';
+    const info = ($('sel-info') as HTMLSelectElement).value as InfoLevel | '';
+    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed }, status);
+    if (!scenario.found || !scenario.scenario) {
+      $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
+      status('No problem fits here');
+      return;
+    }
+    $('sc-note').textContent = scenario.featureNote;
+    showScenario();
+    status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
+    $('scenario-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    status(`Could not set a problem: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$('btn-sc-new').addEventListener('click', () => void runScenario(Math.floor(Math.random() * 1e9)));
+$('btn-sc-develop').addEventListener('click', () => {
+  $('sc-phase2').hidden = false;
+  $('sc-phase2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden === true));
 
 // ---------- enemy company (DS view) ----------
 let company: CompanyView | null = null;
@@ -861,16 +979,17 @@ async function loadAtSelected(): Promise<boolean> {
 
 $('btn-load-point').addEventListener('click', () => void loadAtSelected());
 
+// "Set a problem here" now sets the infantry platoon scenario (PO, DECISIONS.md 125–126).
+// The artillery problem (Template A) is kept in the code but no longer offered.
 $('btn-pt-problem').addEventListener('click', async () => {
   if (!selected) return;
-  if (!boxCentredOn(selected) || !groundFitsProblems()) {
+  if (!boxCentredOn(selected) || !groundFitsCompany()) {
     const p = selected;
-    await loadGround(p.lat, p.lon, 'problem');
+    await loadGround(p.lat, p.lon, 'medium');
     if (!boxCentredOn(p)) return;
     await selectPoint(p.lat, p.lon);
   }
-  await setProblem();
-  $('problem-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  await runScenario(Math.floor(Math.random() * 1e9));
 });
 
 $('btn-vs-me').addEventListener('click', async () => {

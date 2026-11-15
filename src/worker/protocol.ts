@@ -3,6 +3,7 @@ import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
 import type { CompanyOptions, PositionKind } from '../tactics/companyDefence';
+import type { InfoLevel, PlatoonScenario, TaskType } from '../tactics/platoonScenario';
 import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
 import type { ContourLine } from '../terrain/contours';
@@ -61,6 +62,15 @@ export type WorkerRequest =
       /** Elements forced on or off; any left out are decided by the generator. */
       options: Partial<CompanyOptions>;
       seed?: number;
+    }
+  | {
+      /** Generate an enemy company and an infantry platoon scenario against it (Moltke guidelines). */
+      type: 'scenario';
+      id: number;
+      task?: TaskType;
+      info?: InfoLevel;
+      options: Partial<CompanyOptions>;
+      seed: number;
     }
   | {
       /** Ground height at a point (local metres), or null outside the loaded box. */
@@ -160,6 +170,19 @@ export interface CompanyView {
   timeMs: number;
 }
 
+/** An infantry scenario and its DS view (the company layout, routes and objective). */
+export interface ScenarioView {
+  found: boolean;
+  log: string[];
+  featureNote: string;
+  scenario?: Omit<PlatoonScenario, 'direct' | 'covered'> & {
+    direct: { path: Point[]; lengthM: number; underFire: number; minesCrossed: number } | null;
+    covered: { path: Point[]; lengthM: number; underFire: number; minesCrossed: number } | null;
+  };
+  company?: CompanyView;
+  timeMs: number;
+}
+
 /** A problem, ready to show. Positions are local metres from the box centre. */
 export interface ProblemView {
   found: boolean;
@@ -191,4 +214,5 @@ export type WorkerResponse =
   | { type: 'height'; id: number; result: number | null }
   | { type: 'section'; id: number; result: SectionView }
   | { type: 'company'; id: number; result: CompanyView }
+  | { type: 'scenario'; id: number; result: ScenarioView }
   | { type: 'error'; id: number; message: string };

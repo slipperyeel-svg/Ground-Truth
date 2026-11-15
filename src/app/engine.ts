@@ -3,7 +3,8 @@
  */
 import type { Posture } from '../tactics/sectionDefence';
 import type { CompanyOptions } from '../tactics/companyDefence';
-import type { CompanyView, DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
+import type { InfoLevel, TaskType } from '../tactics/platoonScenario';
+import type { CompanyView, ScenarioView, DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -33,6 +34,7 @@ export class Engine {
       else if (msg.type === 'height') p.resolve(msg.result);
       else if (msg.type === 'section') p.resolve(msg.result);
       else if (msg.type === 'company') p.resolve(msg.result);
+      else if (msg.type === 'scenario') p.resolve(msg.result);
     };
   }
 
@@ -64,6 +66,14 @@ export class Engine {
   /** Generate an enemy company defence across the advance from the box centre (DS view). */
   company(options: Partial<CompanyOptions>, seed: number | undefined, onProgress?: (m: string) => void): Promise<CompanyView> {
     return this.request<CompanyView>({ type: 'company', options, seed }, onProgress);
+  }
+
+  /** Generate an enemy company and an infantry platoon scenario against it. */
+  scenario(
+    req: { task?: TaskType; info?: InfoLevel; options: Partial<CompanyOptions>; seed: number },
+    onProgress?: (m: string) => void,
+  ): Promise<ScenarioView> {
+    return this.request<ScenarioView>({ type: 'scenario', ...req }, onProgress);
   }
 
   /** Ground height at a point (local metres), or null outside the loaded box. */
