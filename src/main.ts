@@ -33,7 +33,7 @@ import {
   type BoxGeo,
 } from './app/overlays';
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
-import { ensureSymbol, type Echelon } from './app/symbols';
+import { addMineImages, ensureSymbol, type Echelon } from './app/symbols';
 import { axisArrow, minefield, taskGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
@@ -304,10 +304,26 @@ map.on('load', () => {
     paint: { 'fill-color': '#c00', 'fill-opacity': 0.12 },
   });
   map.addLayer({
-    id: 'graphics-lines', type: 'line', source: 'graphics', filter: ['!=', ['get', 'kind'], 'label'],
+    id: 'graphics-lines', type: 'line', source: 'graphics',
+    filter: ['all', ['!=', ['geometry-type'], 'Point'], ['!=', ['get', 'dashed'], true]],
     paint: {
       'line-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'],
       'line-width': ['match', ['get', 'kind'], 'axis', 2, 2.5],
+    },
+  });
+  // Planned or suspected (APP-6): a dashed outline.
+  map.addLayer({
+    id: 'graphics-dashed', type: 'line', source: 'graphics',
+    filter: ['all', ['!=', ['geometry-type'], 'Point'], ['==', ['get', 'dashed'], true]],
+    paint: { 'line-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'], 'line-width': 2.5, 'line-dasharray': [2, 1.5] },
+  });
+  // APP-6 mine symbols inside minefields.
+  addMineImages(map);
+  map.addLayer({
+    id: 'graphics-mines', type: 'symbol', source: 'graphics', filter: ['==', ['get', 'kind'], 'mine'],
+    layout: {
+      'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.9, 14, 1.2, 16, 2, 18, 2.8],
     },
   });
   map.addLayer({
@@ -578,7 +594,7 @@ function renderSituation() {
     for (const d of co.dummies ?? []) units.push(unitFeature(d.point, { identity: 'hostile', echelon: 'section', dummy: true }));
     // DS: the minefield itself, once (the "found" outline is part of it).
     const laid = m.minefields.filter((mf) => mf.label !== 'Mines found');
-    for (const mf of laid.length ? laid : m.minefields) graphics.push(...minefield(c, mf.outline, 'mines', 'hostile', false));
+    for (const mf of laid.length ? laid : m.minefields) graphics.push(...minefield(c, mf.outline, 'mixed', 'hostile', false));
   } else {
     for (const x of m.sightings) {
       if (x.phase === 2 && !phase2Shown) continue;
@@ -586,7 +602,7 @@ function renderSituation() {
     }
     for (const mf of m.minefields) {
       if (mf.phase === 2 && !phase2Shown) continue;
-      graphics.push(...minefield(c, mf.outline, mf.phase === 1 ? 'suspected' : 'found', 'hostile', mf.phase === 1));
+      graphics.push(...minefield(c, mf.outline, mf.phase === 1 ? 'unspecified' : 'ap', 'hostile', mf.phase === 1));
     }
   }
   (map.getSource('units') as GeoJSONSource).setData({ type: 'FeatureCollection', features: units } as never);

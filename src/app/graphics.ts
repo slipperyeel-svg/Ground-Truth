@@ -117,10 +117,34 @@ export function taskGraphic(
   return screen(c, t.objective, perp(t.across));
 }
 
-/** Minefield outline (APP-6: a closed outline with "M"). */
-export function minefield(c: LL, outline: Point[], text: string, side: 'hostile', dashed: boolean): Feature[] {
+export type MineType = 'unspecified' | 'ap' | 'mixed';
+
+/**
+ * Minefield in APP-6 form: a closed outline (dashed if planned or suspected,
+ * solid if known) with mine symbols inside: open circle = mine of unknown
+ * type, filled circle = anti-tank, filled circle with two "whiskers" =
+ * anti-personnel. A mixed minefield shows both.
+ */
+export function minefield(c: LL, outline: Point[], type: MineType, side: 'hostile', dashed: boolean): Feature[] {
   if (outline.length < 3) return [];
   const cx = outline.reduce((a, p) => a + p.x, 0) / outline.length;
   const cy = outline.reduce((a, p) => a + p.y, 0) / outline.length;
-  return [polygon(c, outline, { kind: 'minefield', side, dashed }), label(c, { x: cx, y: cy }, `M  ${text}`, { side })];
+  // The mine symbols run along the longest side of the outline.
+  let along: Point = { x: 1, y: 0 }, longest = 0;
+  for (let k = 0; k < outline.length; k++) {
+    const a = outline[k], b = outline[(k + 1) % outline.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len > longest) { longest = len; along = unit(a, b); }
+  }
+  const centre = { x: cx, y: cy };
+  const icon = (k: number): string =>
+    type === 'unspecified' ? 'mine-unk' : type === 'ap' ? 'mine-ap' : k % 2 ? 'mine-ap' : 'mine-at';
+  const spots = longest < 200 ? [0] : [-1, 0, 1];
+  const step = longest * 0.28;
+  const mines: Feature[] = spots.map((k, n) => ({
+    type: 'Feature',
+    properties: { kind: 'mine', side, icon: icon(n) },
+    geometry: { type: 'Point', coordinates: toLL(c, add(centre, along, k * step)) },
+  }));
+  return [polygon(c, outline, { kind: 'minefield', side, dashed }), ...mines];
 }

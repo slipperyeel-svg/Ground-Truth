@@ -71,3 +71,36 @@ export function ensureSymbol(
   }
   return { name, offset: [-a.x, -a.y] };
 }
+
+/**
+ * APP-6 mine symbols as map images, in hostile red: "mine-unk" (open circle,
+ * type not known), "mine-at" (filled circle, anti-tank) and "mine-ap"
+ * (filled circle with two whiskers, anti-personnel).
+ */
+export function addMineImages(map: MapLibreMap): void {
+  const ratio = 3, size = 22, r = 6;
+  const draw = (name: string, filled: boolean, whiskers: boolean) => {
+    if (map.hasImage(name)) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size * ratio;
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(ratio, ratio);
+    ctx.strokeStyle = ctx.fillStyle = '#c00';
+    ctx.lineWidth = 2;
+    const cx = size / 2, cy = size / 2 + (whiskers ? 3 : 0);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    if (filled) ctx.fill(); else { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); ctx.stroke(); }
+    if (whiskers) {
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, cy - r + 1); ctx.lineTo(cx - 7, cy - r - 5);
+      ctx.moveTo(cx + 3, cy - r + 1); ctx.lineTo(cx + 7, cy - r - 5);
+      ctx.stroke();
+    }
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.addImage(name, { width: img.width, height: img.height, data: new Uint8Array(img.data.buffer) }, { pixelRatio: ratio });
+  };
+  draw('mine-unk', false, false);
+  draw('mine-at', true, false);
+  draw('mine-ap', true, true);
+}
