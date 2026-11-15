@@ -9,9 +9,10 @@
  * DSM minus DTM is the measured height of everything on the ground, which
  * replaces the fixed 15 m / 8 m / 2 m obstacle heights where LIDAR exists.
  *
- * Both are requested in British National Grid at the analysis cell size
- * (2 m by default, to keep a 2 km box to about 4 MB each), then sampled onto
- * the engine's local grid.
+ * Both are requested in British National Grid at the analysis cell size,
+ * thinned by the server (DECISIONS.md 87, 92): fine = 2 km box at 2 m,
+ * medium = 4 km at 5 m (about 4 MB per layer each), problems = 4 km at 10 m
+ * (about 0.6 MB). They are then sampled onto the engine's local grid.
  */
 import { createGrid, type Grid } from './grid';
 import { localToLatLon } from './elevation';
@@ -151,11 +152,26 @@ export async function loadLidar(
   const f = opts.fetchImpl ?? fetch;
   const b = bngBoxFor(centre, sizeM, cellM);
   const get = async (src: typeof LIDAR_DTM) => {
-    const res = await f(coverageUrl(src, b, cellM));
-    if (!res.ok) return null; // e.g. outside the coverage
-    const type = res.headers.get('content-type') ?? '';
-    if (!type.includes('tiff')) return null;
-    return readFloatTiff(await res.arrayBuffer());
+    // The service occasionally hangs without replying, while a retry answers
+    // in about a second (normal replies take 1–3 s). So give each attempt
+    // 15 s, and try up to three times.
+    const ATTEMPTS = 3;
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 15_000);
+      try {
+        const res = await f(coverageUrl(src, b, cellM), { signal: ctl.signal });
+        if (!res.ok) return null; // e.g. outside the coverage
+        const type = res.headers.get('content-type') ?? '';
+        if (!type.includes('tiff')) return null;
+        return readFloatTiff(await res.arrayBuffer());
+      } catch (err) {
+        if (attempt === ATTEMPTS - 1) throw new Error('the Environment Agency LIDAR server did not reply');
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return null;
   };
   opts.onProgress?.('Fetching LIDAR ground and surface heights (Environment Agency)…');
   const [dtm, dsm] = await Promise.all([get(LIDAR_DTM), get(LIDAR_DSM)]);

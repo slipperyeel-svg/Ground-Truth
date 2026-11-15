@@ -1,7 +1,7 @@
 /**
  * The page's handle on the analysis worker: each request returns a promise.
  */
-import type { DemoTerrain, FeaturesView, LoadedGround, ProblemView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
+import type { DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -43,7 +43,7 @@ export class Engine {
   load(
     lat: number,
     lon: number,
-    opts: { sizeM?: number; cellM?: number; demo?: DemoTerrain; detail?: 'fine' | 'standard' } = {},
+    opts: { sizeM?: number; cellM?: number; demo?: DemoTerrain; detail?: Detail } = {},
     onProgress?: (m: string) => void,
   ): Promise<LoadedGround> {
     return this.request<LoadedGround>(

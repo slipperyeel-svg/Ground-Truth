@@ -117,7 +117,7 @@ The analysis of a 4 km box at 10 m cells takes about 0.2 s on a desktop-class CP
 |---|---|---|
 | Elevation (default, global) | AWS Terrain Tiles, Terrarium PNG, zoom 13 | `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`. Decode: `(R*256 + G + B/256) - 32768`. In GB this is mostly **EU-DEM (~30 m, a surface model)**: woods and towns may read as raised ground. Reported resolution is never finer than 30 m. |
 | Elevation (GB, fallback) | OS Terrain 50 (ASCII grid) | Parser done; wiring a GPS position to it needs BNG conversion (available in `gridref.ts`). |
-| Elevation (England, fine) | **Environment Agency LIDAR**, DTM + first-return DSM, via WCS at `environment.data.gov.uk`, 2 km box at 2 m | Default "Fine" detail. `src/terrain/lidar.ts`, `src/terrain/tiff.ts`. DSM − DTM = measured obstacle heights. DECISIONS.md 86–91. |
+| Elevation (England, fine) | **Environment Agency LIDAR**, DTM + first-return DSM, via WCS at `environment.data.gov.uk` | Fine = 2 km at 2 m (default), Medium = 4 km at 5 m, problems = 4 km at 10 m. `src/terrain/lidar.ts`, `src/terrain/tiff.ts`. DSM − DTM = measured obstacle heights. Server sometimes hangs: 15 s timeout, 3 tries. DECISIONS.md 86–96. |
 | Base map, GB (default) | **OS open map**: OS Vector Tile API, OS's own style, tiles capped at zoom 15 | OS OpenData: free and unlimited. Never request vector tiles above zoom 15 (premium MasterMap). |
 | Base map, GB (optional) | OS Maps API: `Leisure_27700` (1:25k, premium, warped in-app) and `Outdoor_3857` | Premium beyond the free £1,000/month: not sustainable for public release (DECISIONS.md 56). |
 | Base map, elsewhere | OpenStreetMap standard tiles | Fine for development only. **Needs a proper provider before wider release.** |

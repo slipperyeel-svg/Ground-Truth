@@ -145,3 +145,11 @@ The engine now reads the features of the ground as well as its shape, finds the 
 89. **Detail choice in the panel:** Fine (LIDAR 2 m, 2 km) is the default; Standard (30 m, 4 km) remains. The problem engine (Template A) is built for the standard 4 km box, so "Set a problem" reloads the box at standard detail.
 90. **TIFF reading** is done by a small reader in our own code (`src/terrain/tiff.ts`: one band of float32, uncompressed, strips or tiles, either byte order). No new dependency.
 91. **Resolved: the 0% viewshed at SU 1442 4319 (Larkhill) was correct.** Something 20.4 m tall (a building or trees) stands within 6 m of that point. From open points LIDAR obstacles behave sensibly: Larkhill open field SU 1430 4240 sees 11.1% (17.5% bare ground); Ell Barrow 43.4% (44.0%). The viewshed now warns when the observer stands in or within 6 m of something taller than their eye.
+
+## Medium detail and problems on LIDAR (15 Nov 2026)
+
+92. **PO: three detail levels in England.** Fine = LIDAR 2 km box at 2 m; **Medium = LIDAR 4 km box at 5 m** (about 8 MB for both layers); Standard = 30 m data, 4 km box (and the fallback outside England or without LIDAR).
+93. **PO: problems run on LIDAR at 10 m over the 4 km box** (about 1.3 MB for both layers) wherever it exists, instead of the 30 m surface model; the engine is unchanged. First runs: Westdown SU 0654 5054 and Larkhill SU 1453 4330 both produced problems (Larkhill had not on 30 m data); 7–8 s from tap to problem including loading.
+94. **Thinning keeps the cover.** Share of the Larkhill box with something over 5 m tall: 10.2% at 2 m, 10.1% at 5 m, 9.9% at 10 m; 1–5 m cover (hedges, walls) grows from 5.8% to 9.9% as hedges spread across coarser cells, but is not lost.
+95. **The LIDAR server sometimes hangs without replying** while an immediate retry answers in about a second. Each request now gives up after 15 s and tries up to three times. One Medium load took 35 s for this reason.
+96. **PO: road cuttings and embankments count as obstacles.** With exact LIDAR they register as steep ground and can form choke points (e.g. Larkhill NAI "narrowed by steep ground and woods to about 20 m"). "That's fine for cuttings, they are hard work to deal with."

@@ -5,6 +5,14 @@ import type { GroundClassification } from '../terrain/classify';
 import type { ContourLine } from '../terrain/contours';
 
 export type DemoTerrain = 'ridge' | 'cone' | 'valley' | 'flat';
+export type Detail = 'fine' | 'medium' | 'problem' | 'standard';
+
+/** Box size and cell size for each LIDAR detail level. */
+export const LIDAR_DETAIL: Record<Exclude<Detail, 'standard'>, { sizeM: number; cellM: number; label: string }> = {
+  fine: { sizeM: 2000, cellM: 2, label: 'fine (LIDAR 2 m)' },
+  medium: { sizeM: 4000, cellM: 5, label: 'medium (LIDAR 5 m)' },
+  problem: { sizeM: 4000, cellM: 10, label: 'LIDAR 10 m' },
+};
 
 export type WorkerRequest =
   | {
@@ -17,10 +25,11 @@ export type WorkerRequest =
       /** Use synthetic ground instead of real data (for testing indoors). */
       demo?: DemoTerrain;
       /**
-       * 'fine': Environment Agency LIDAR at 2 m over a 2 km box where it exists
-       * (England), else falls back to standard. 'standard': ~30 m data, sizeM/cellM as given.
+       * Environment Agency LIDAR where it exists (England), else falls back to standard:
+       * 'fine' 2 km box at 2 m; 'medium' 4 km at 5 m; 'problem' 4 km at 10 m (what the
+       * problem engine is built for). 'standard': ~30 m data, sizeM/cellM as given.
        */
-      detail?: 'fine' | 'standard';
+      detail?: Detail;
     }
   | {
       type: 'viewshed';

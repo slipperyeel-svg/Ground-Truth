@@ -17,7 +17,7 @@ import {
 import { contours, chooseInterval } from '../terrain/contours';
 import { coneHill, convexRidge, flatPlane, fromFunction, vValley } from '../terrain/synthetic';
 import { browserTileSource } from '../terrain/tiles-browser';
-import type { DemoTerrain, FeaturesView, ProblemView, WorkerRequest, WorkerResponse } from './protocol';
+import { LIDAR_DETAIL, type DemoTerrain, type FeaturesView, type ProblemView, type WorkerRequest, type WorkerResponse } from './protocol';
 import { featureImage } from '../features/render';
 import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
@@ -109,11 +109,12 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       let detailNote = '';
       let lidar = false;
       grid = null;
-      if (!req.demo && req.detail === 'fine') {
-        if (!inGreatBritain(req.lat, req.lon)) detailNote = 'Fine (LIDAR) detail is only available in England.';
+      if (!req.demo && req.detail && req.detail !== 'standard') {
+        const d = LIDAR_DETAIL[req.detail];
+        if (!inGreatBritain(req.lat, req.lon)) detailNote = 'LIDAR detail is only available in England, so standard detail is used.';
         else {
           try {
-            const l = await loadLidar({ lat: req.lat, lon: req.lon }, 2000, 2, { onProgress: progress });
+            const l = await loadLidar({ lat: req.lat, lon: req.lon }, d.sizeM, d.cellM, { onProgress: progress });
             if (l) {
               grid = l.grid;
               lidar = true;

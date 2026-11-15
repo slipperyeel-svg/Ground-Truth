@@ -31,7 +31,7 @@ import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
-import type { DemoTerrain, LoadedGround, ProblemView } from './worker/protocol';
+import type { DemoTerrain, Detail, LoadedGround, ProblemView } from './worker/protocol';
 
 // ---------- state ----------
 const params = new URLSearchParams(location.search);
@@ -299,9 +299,12 @@ function setBusy(busy: boolean) {
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
-const chosenDetail = () => ($('sel-detail') as HTMLSelectElement).value as 'fine' | 'standard';
+const chosenDetail = () => ($('sel-detail') as HTMLSelectElement).value as Detail;
 
-async function loadGround(lat: number, lon: number, detail: 'fine' | 'standard' = chosenDetail()) {
+/** True if the loaded ground is what the problem engine needs: a 4 km box at 10 m. */
+const groundFitsProblems = () => !!ground && ground.cellM === 10 && ground.width * ground.cellM === 4000;
+
+async function loadGround(lat: number, lon: number, detail: Detail = chosenDetail()) {
   setBusy(true);
   status(demo ? 'Building demo ground…' : 'Fetching elevation data…');
   try {
@@ -417,12 +420,12 @@ function fillList(id: string, items: string[]) {
 
 async function setProblem() {
   if (!box) return;
-  if (ground?.lidar) {
-    // The problem engine is built for the standard 4 km box at ~30 m.
-    status('Problems use standard detail: reloading the 4 km box…');
+  if (!groundFitsProblems()) {
+    // The problem engine works on a 4 km box at 10 m: LIDAR in England, else standard.
+    status('Loading the 4 km box at 10 m for the problem…');
     const c = box.centre;
-    await loadGround(c.lat, c.lon, 'standard');
-    if (!box || ground?.lidar) return;
+    await loadGround(c.lat, c.lon, 'problem');
+    if (!box || !groundFitsProblems()) return;
   }
   clearProblem();
   setBusy(true);
@@ -652,9 +655,9 @@ $('btn-load-point').addEventListener('click', () => void loadAtSelected());
 
 $('btn-pt-problem').addEventListener('click', async () => {
   if (!selected) return;
-  if (!boxCentredOn(selected) || ground?.lidar) {
+  if (!boxCentredOn(selected) || !groundFitsProblems()) {
     const p = selected;
-    await loadGround(p.lat, p.lon, 'standard');
+    await loadGround(p.lat, p.lon, 'problem');
     if (!boxCentredOn(p)) return;
     await selectPoint(p.lat, p.lon);
   }
