@@ -180,7 +180,7 @@ Items 1, 2, 4 and 6 were answered on 14 Nov 2026 (see DECISIONS.md 33–36): cre
 **Quality gate (run before showing any problem).** Reject and retry (move the box, change template, change enemy direction) unless all of these hold:
 - at least two viable courses of action exist, with a measurable trade-off;
 - the template's dilemma test passes;
-- every stand is within a 3 km round trip of the start (PO dropped the public-path and exclusion rules, DECISIONS.md 76);
+- ~~every stand is within a 3 km round trip of the start~~ (PO, 15 Nov 2026: no walking limit; the ground decides where the enemy is, DECISIONS.md 146–147; public-path and exclusion rules already dropped, DECISIONS.md 76);
 - the echelon fits the data resolution.
 
 If nothing passes, fall back to Template C, or tell the user plainly why this ground offers no good problem.
