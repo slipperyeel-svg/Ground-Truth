@@ -46,7 +46,8 @@
         <div id="pt-ref" class="gr"></div>
         <div id="pt-detail" class="detail"></div>
         <div class="row buttons">
-          <button id="btn-pt-problem" class="primary">Set a problem here</button>
+          <button id="btn-pt-section" class="primary">Enemy section here</button>
+          <button id="btn-pt-problem">Set a problem here</button>
           <button id="btn-pt-vs">Viewshed from here</button>
           <button id="btn-pt-clear">Clear</button>
         </div>
@@ -75,6 +76,53 @@
           <span><span class="sw" style="background:rgb(20,20,20)"></span> railway</span>
         </div>
         <div id="feat-note" class="source"></div>
+      </div>
+
+      <div id="section-block" class="block" hidden>
+        <div class="label">Enemy section problem</div>
+        <div class="row selects">
+          <label>Enemy posture
+            <select id="sel-posture">
+              <option value="prepared" selected>Prepared defence</option>
+              <option value="hasty">Hasty defence</option>
+            </select>
+          </label>
+          <label>You are told
+            <select id="sel-intel">
+              <option value="area" selected>Grid square only</option>
+              <option value="exact">Exact position</option>
+              <option value="direction">Direction only</option>
+            </select>
+          </label>
+        </div>
+        <div class="row buttons">
+          <button id="btn-sec-new">New enemy layout</button>
+          <button id="btn-sec-ds" hidden>Reveal enemy layout</button>
+        </div>
+        <div id="section" hidden>
+          <h2 id="sec-title"></h2>
+          <h3>Situation</h3>
+          <p id="sec-situation"></p>
+          <h3>Enemy</h3>
+          <p id="sec-enemy"></p>
+          <h3>Mission</h3>
+          <p id="sec-mission"></p>
+          <h3>Requirement</h3>
+          <ol id="sec-req"></ol>
+          <h3>Time allowed</h3>
+          <p id="sec-time"></p>
+          <div id="sec-ds" hidden>
+            <h3>DS notes (computed facts)</h3>
+            <ul id="sec-ds-list"></ul>
+            <div class="legend wrap">
+              <span><span class="sw enemy"></span> enemy fire team</span>
+              <span><span class="sw" style="background:rgba(230,90,0,0.55)"></span> covered by enemy fire</span>
+              <span><span class="sw" style="background:rgba(40,90,220,0.55)"></span> dead ground in front</span>
+            </div>
+          </div>
+          <p id="sec-data" class="source"></p>
+        </div>
+        <div id="sec-note" class="source"></div>
       </div>
 
       <div id="problem-block" class="block" hidden>

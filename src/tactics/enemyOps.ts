@@ -52,10 +52,12 @@ export function downsample(g: Grid, factor: number): Grid {
 }
 
 /**
- * Obstacles for a coarser copy of the grid: the average obstacle height of
- * each block, and "wood" where at least half the block is wood.
+ * Obstacles for a coarser copy of the grid: the average (or tallest)
+ * obstacle height of each block, and "wood" where at least half the block is
+ * wood. Use 'max' for small blocks (a few metres), so a hedge is not
+ * averaged away.
  */
-export function downsampleObstacles(g: Grid, obs: Obstacles, factor: number): Obstacles {
+export function downsampleObstacles(g: Grid, obs: Obstacles, factor: number, mode: 'mean' | 'max' = 'mean'): Obstacles {
   if (factor <= 1) return obs;
   const w = Math.floor(g.width / factor);
   const h = Math.floor(g.height / factor);
@@ -64,14 +66,16 @@ export function downsampleObstacles(g: Grid, obs: Obstacles, factor: number): Ob
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
       let sum = 0;
+      let top = 0;
       let woods = 0;
       for (let dr = 0; dr < factor; dr++)
         for (let dc = 0; dc < factor; dc++) {
           const i = (r * factor + dr) * g.width + c * factor + dc;
           sum += obs.heightM[i];
+          top = Math.max(top, obs.heightM[i]);
           woods += obs.wood[i];
         }
-      heightM[r * w + c] = sum / (factor * factor);
+      heightM[r * w + c] = mode === 'max' ? top : sum / (factor * factor);
       wood[r * w + c] = woods * 2 >= factor * factor ? 1 : 0;
     }
   }

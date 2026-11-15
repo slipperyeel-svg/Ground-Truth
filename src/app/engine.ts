@@ -1,7 +1,8 @@
 /**
  * The page's handle on the analysis worker: each request returns a promise.
  */
-import type { DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
+import type { Posture } from '../tactics/sectionDefence';
+import type { DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -29,6 +30,7 @@ export class Engine {
       else if (msg.type === 'problem') p.resolve(msg.result);
       else if (msg.type === 'features') p.resolve(msg.result);
       else if (msg.type === 'height') p.resolve(msg.result);
+      else if (msg.type === 'section') p.resolve(msg.result);
     };
   }
 
@@ -50,6 +52,11 @@ export class Engine {
       { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo, detail: opts.detail },
       onProgress,
     );
+  }
+
+  /** Place an enemy section blocking the advance from the box centre, and write the scenario. */
+  section(posture: Posture, random: number | undefined, onProgress?: (m: string) => void): Promise<SectionView> {
+    return this.request<SectionView>({ type: 'section', posture, random }, onProgress);
   }
 
   /** Ground height at a point (local metres), or null outside the loaded box. */

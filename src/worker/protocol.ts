@@ -1,6 +1,8 @@
 /** Messages between the page and the analysis worker. */
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
+import type { Intel, Posture } from '../tactics/sectionDefence';
+import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
 import type { ContourLine } from '../terrain/contours';
 
@@ -42,6 +44,14 @@ export type WorkerRequest =
       maxRangeM: number;
       /** Let woods, buildings and hedges block sight (fetches map features if needed). */
       useObstacles: boolean;
+    }
+  | {
+      /** Place an enemy section blocking the user's advance from the box centre. */
+      type: 'section';
+      id: number;
+      posture: Posture;
+      /** 0–1 to pick among the best few positions for variety; omit for the best. */
+      random?: number;
     }
   | {
       /** Ground height at a point (local metres), or null outside the loaded box. */
@@ -96,6 +106,29 @@ export interface FeaturesView {
   image?: Uint8ClampedArray;
 }
 
+/** An enemy section layout and its scenario, ready to show. Positions in local metres. */
+export interface SectionView {
+  found: boolean;
+  log: string[];
+  featureNote: string;
+  /** The scenario, written for each level of intelligence the user may be given. */
+  text?: Record<Intel, SectionScenarioText>;
+  /** The DS solution: shown only when the user asks. */
+  ds?: {
+    position: Point;
+    teams: { label: string; point: Point; gun: boolean }[];
+    route: Point[];
+    alternatives: Point[];
+    maskWidth: number;
+    maskHeight: number;
+    /** 1 = covered by the section's fire. */
+    killZone: Uint8Array;
+    /** 1 = dead ground within rifle range in front. */
+    deadGround: Uint8Array;
+  };
+  timeMs: number;
+}
+
 /** A problem, ready to show. Positions are local metres from the box centre. */
 export interface ProblemView {
   found: boolean;
@@ -125,4 +158,5 @@ export type WorkerResponse =
   | { type: 'problem'; id: number; result: ProblemView }
   | { type: 'features'; id: number; result: FeaturesView }
   | { type: 'height'; id: number; result: number | null }
+  | { type: 'section'; id: number; result: SectionView }
   | { type: 'error'; id: number; message: string };

@@ -156,3 +156,32 @@ export function dsGeoJSON(
   }
   return { type: 'FeatureCollection' as const, features };
 }
+
+// ---------- enemy section ----------
+
+/** Enemy fire teams, other possible positions and the attacker's route. */
+export function sectionGeoJSON(
+  centre: LL,
+  ds: { teams: { label: string; point: { x: number; y: number }; gun: boolean }[]; alternatives: { x: number; y: number }[]; route: { x: number; y: number }[] },
+) {
+  const features: object[] = [
+    { type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: ds.route.map((p) => ll(centre, p)) } },
+  ];
+  for (const t of ds.teams) {
+    features.push({ type: 'Feature', properties: { kind: t.gun ? 'gun' : 'team', label: t.label }, geometry: { type: 'Point', coordinates: ll(centre, t.point) } });
+  }
+  ds.alternatives.forEach((p, k) =>
+    features.push({ type: 'Feature', properties: { kind: 'alt', label: `Alt ${k + 1}` }, geometry: { type: 'Point', coordinates: ll(centre, p) } }),
+  );
+  return { type: 'FeatureCollection' as const, features };
+}
+
+/** Ground covered by the section's fire (orange) and dead ground in front (blue). */
+export function sectionZonesImage(width: number, height: number, killZone: Uint8Array, deadGround: Uint8Array): string {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    if (deadGround[i]) rgba.set([40, 90, 220, 120], i * 4);
+    else if (killZone[i]) rgba.set([230, 90, 0, 95], i * 4);
+  }
+  return toDataURL(width, height, rgba);
+}

@@ -25,6 +25,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 | **M1 – Terrain engine** | Done. Unit tests pass, including against real Terrarium tiles (`NETWORK=1`), 14 Nov 2026. |
 | **M2 – Map view** | Done, with OS base maps. Live at https://slipperyeel-svg.github.io/Ground-Truth/ ; real OS Explorer tiles and elevation loaded there on 14 Nov 2026. Default base map is now the OS open map (natively Web Mercator, no warp). The Explorer grid-alignment check only matters if Explorer is used (optional, premium); not a priority (PO, 15 Nov 2026). |
 | **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation. OSM features load and display correctly on the PO's device (Larkhill/Amesbury, 14 Nov 2026); Overpass is still unreachable from the cloud workspace. Problems resumed 15 Nov 2026: "Set a problem here" at a selected point; access gate dropped, obstacles used (DECISIONS.md 75–80). Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
+| **Enemy layouts (platoon level, PO direction 15 Nov 2026)** | Section defence placement built (prepared/hasty), with scenario text and DS reveal (`src/tactics/sectionDefence.ts`, `sectionScenario.ts`; DECISIONS.md 97–104). Awaiting PO judgement on real ground, and answers on enfilade, reverse slopes, postures and weights. Next: the user's plan (FUP, fire support, assault route) and DS feedback; then more layouts (platoon defence, patrol). |
 | M4 – Templates B and C, ground classification choosing between them, access-safe stands from OSM paths | Not started. |
 | M5 – DS feedback, answer capture, then LLM prose and critique from computed facts only | Not started. |
 | M6 – AR prototype (React Native/Expo, native) | Not started. Do not begin until Phase 1 is complete. |
@@ -102,6 +103,8 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/tactics/approach.ts` | Least-cost enemy approach, corridor, NAI and what channels it |
 | `src/tactics/enemyOps.ts` | Likely enemy OPs: best viewpoints on the enemy side |
 | `src/tactics/templateA.ts` | Template A: OP candidates, gun areas, line of communication, dilemma test, quality gate |
+| `src/tactics/sectionDefence.ts` | Enemy section defence: route from the start, candidate scoring, direction choice, fire-team layout, kill zone and dead ground |
+| `src/tactics/sectionScenario.ts` | Section scenario text for each intelligence level, and DS notes |
 | `src/tactics/problem.ts` | Tries each enemy direction, ranks passes, writes the problem and DS notes |
 | `src/main.ts`, `index.html`, `src/style.css` | The map screen (phone-first, high contrast): point selection by tap or crosshair, viewshed, features, "Set a problem" |
 | `public/sw.js`, `public/manifest.webmanifest` | Offline cache and installable-app manifest |

@@ -17,7 +17,7 @@ import {
 import { contours, chooseInterval } from '../terrain/contours';
 import { coneHill, convexRidge, flatPlane, fromFunction, vValley } from '../terrain/synthetic';
 import { browserTileSource } from '../terrain/tiles-browser';
-import { LIDAR_DETAIL, type DemoTerrain, type FeaturesView, type ProblemView, type WorkerRequest, type WorkerResponse } from './protocol';
+import { LIDAR_DETAIL, type DemoTerrain, type FeaturesView, type ProblemView, type SectionView, type WorkerRequest, type WorkerResponse } from './protocol';
 import { featureImage } from '../features/render';
 import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
@@ -25,6 +25,8 @@ import { generateProblem } from '../tactics/problem';
 import { fetchCombinedFeatures } from '../features/osVector';
 import { buildObstacles, type Obstacles } from '../features/obstacles';
 import { loadLidar } from '../terrain/lidar';
+import { placeEnemySection } from '../tactics/sectionDefence';
+import { writeSectionScenario } from '../tactics/sectionScenario';
 import { inGreatBritain } from '../geo/gridref';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -219,6 +221,40 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         },
         [mask.buffer],
       );
+    } else if (req.type === 'section') {
+      if (!grid) throw new Error('No ground loaded yet');
+      const progress = (message: string) => post({ type: 'progress', id: req.id, message });
+      const t0 = performance.now();
+      await ensureLayers(progress);
+      progress('Reading the ground for a likely enemy position…');
+      const layout = placeEnemySection({ grid, layers, obstacles, posture: req.posture, random: req.random });
+      const keep = (_: unknown, k: number, a: unknown[]) => k % 4 === 0 || k === a.length - 1;
+      const view: SectionView = {
+        found: !!layout,
+        log: layout?.log ?? ['No position ahead of you covers enough of any route across the box.'],
+        featureNote,
+        text: layout
+          ? {
+              exact: writeSectionScenario(grid, layout, 'exact'),
+              area: writeSectionScenario(grid, layout, 'area'),
+              direction: writeSectionScenario(grid, layout, 'direction'),
+            }
+          : undefined,
+        ds: layout
+          ? {
+              position: layout.position,
+              teams: layout.teams,
+              route: layout.route.filter(keep),
+              alternatives: layout.alternatives.map((a) => a.point),
+              maskWidth: layout.maskWidth,
+              maskHeight: layout.maskHeight,
+              killZone: layout.killZone,
+              deadGround: layout.deadGround,
+            }
+          : undefined,
+        timeMs: Math.round(performance.now() - t0),
+      };
+      post({ type: 'section', id: req.id, result: view }, view.ds ? [view.ds.killZone.buffer, view.ds.deadGround.buffer] : []);
     } else if (req.type === 'height') {
       const half = grid ? (grid.width * grid.cellM) / 2 : 0;
       const inside = !!grid && Math.abs(req.x) <= half && Math.abs(req.y) <= half;

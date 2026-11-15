@@ -23,6 +23,8 @@ import {
   hillshadeImage,
   pointGeoJSON,
   problemGeoJSON,
+  sectionGeoJSON,
+  sectionZonesImage,
   toDataURL,
   viewshedImage,
   type BoxGeo,
@@ -31,7 +33,8 @@ import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
-import type { DemoTerrain, Detail, LoadedGround, ProblemView } from './worker/protocol';
+import type { DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
+import type { Intel, Posture } from './tactics/sectionDefence';
 
 // ---------- state ----------
 const params = new URLSearchParams(location.search);
@@ -140,6 +143,8 @@ map.on('load', () => {
   map.addSource('hillshade', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('viewshed', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('features', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
+  map.addSource('section-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
+  map.addSource('section', { type: 'geojson', data: EMPTY });
   map.addSource('contours', {
     type: 'geojson',
     data: EMPTY,
@@ -155,6 +160,7 @@ map.on('load', () => {
   map.addLayer({ id: 'hillshade', type: 'raster', source: 'hillshade', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'features', type: 'raster', source: 'features', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'viewshed', type: 'raster', source: 'viewshed', paint: { 'raster-fade-duration': 0 } });
+  map.addLayer({ id: 'section-zones', type: 'raster', source: 'section-zones', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({
     id: 'contours',
     type: 'line',
@@ -229,6 +235,23 @@ map.on('load', () => {
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
   map.addLayer({
+    id: 'section-route', type: 'line', source: 'section', filter: ['==', ['get', 'kind'], 'route'],
+    paint: { 'line-color': '#1a73e8', 'line-width': 2.5, 'line-dasharray': [2, 2] },
+  });
+  map.addLayer({
+    id: 'section-points', type: 'circle', source: 'section', filter: ['!=', ['get', 'kind'], 'route'],
+    paint: {
+      'circle-radius': ['match', ['get', 'kind'], 'alt', 5, 8],
+      'circle-color': ['match', ['get', 'kind'], 'gun', '#7a0000', 'team', '#c00', '#c88'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 2,
+    },
+  });
+  map.addLayer({
+    id: 'section-labels', type: 'symbol', source: 'section', filter: ['!=', ['get', 'kind'], 'route'],
+    layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
+  map.addLayer({
     id: 'me',
     type: 'circle',
     source: 'me',
@@ -295,7 +318,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
@@ -341,6 +364,7 @@ async function loadGround(lat: number, lon: number, detail: Detail = chosenDetai
     $('vs-block').hidden = false;
     clearProblem();
     clearFeatures();
+    clearSection();
     $('problem-block').hidden = false;
     status(`Ground loaded · ${gridRef(lat, lon).ref}`);
     showPosition();
@@ -398,6 +422,83 @@ async function toggleFeatures() {
 }
 
 $('btn-features').addEventListener('click', () => void toggleFeatures());
+
+// ---------- enemy section problem ----------
+let section: SectionView | null = null;
+
+function clearSection() {
+  section = null;
+  $('section').hidden = true;
+  $('sec-ds').hidden = true;
+  $('btn-sec-ds').hidden = true;
+  $('sec-note').textContent = '';
+  if (box) (map.getSource('section-zones') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
+  (map.getSource('section') as GeoJSONSource | undefined)?.setData(EMPTY);
+}
+
+function showSectionText() {
+  if (!section?.text) return;
+  const t = section.text[($('sel-intel') as HTMLSelectElement).value as Intel];
+  $('sec-title').textContent = t.title;
+  $('sec-situation').textContent = t.situation;
+  $('sec-enemy').textContent = t.enemy;
+  $('sec-mission').textContent = t.mission;
+  fillList('sec-req', t.requirement);
+  $('sec-time').textContent = t.timeAllowed;
+  fillList('sec-ds-list', t.dsNotes);
+  $('sec-data').textContent = t.dataNote;
+}
+
+function showSectionLayout(show: boolean) {
+  if (!box || !section?.ds) return;
+  const ds = section.ds;
+  $('sec-ds').hidden = !show;
+  ($('btn-sec-ds') as HTMLButtonElement).textContent = show ? 'Hide enemy layout' : 'Reveal enemy layout';
+  (map.getSource('section-zones') as ImageSource).updateImage({
+    url: show ? sectionZonesImage(ds.maskWidth, ds.maskHeight, ds.killZone, ds.deadGround) : BLANK,
+    coordinates: boxCorners(box),
+  });
+  (map.getSource('section') as GeoJSONSource).setData(show ? (sectionGeoJSON(box.centre, ds) as never) : EMPTY);
+}
+
+async function runSection(random?: number) {
+  if (!box) return;
+  clearSection();
+  $('section-block').hidden = false;
+  setBusy(true);
+  status('Reading the ground…');
+  try {
+    section = await engine.section(($('sel-posture') as HTMLSelectElement).value as Posture, random, status);
+    $('sec-note').textContent = section.featureNote;
+    if (!section.found) {
+      $('sec-note').textContent = `${section.featureNote} ${section.log.join(' ')} Try a point a little way off.`;
+      status('No enemy position found here');
+      return;
+    }
+    showSectionText();
+    $('section').hidden = false;
+    $('btn-sec-ds').hidden = false;
+    showSectionLayout(false);
+    status(`Enemy section placed (${(section.timeMs / 1000).toFixed(1)} s)`);
+    $('section-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    status(`Could not place an enemy section: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$('btn-pt-section').addEventListener('click', async () => {
+  if (!selected) return;
+  if (!boxCentredOn(selected) && !(await loadAtSelected())) return;
+  await runSection();
+});
+$('btn-sec-new').addEventListener('click', () => void runSection(Math.random()));
+$('btn-sec-ds').addEventListener('click', () => showSectionLayout($('sec-ds').hidden === true));
+$('sel-intel').addEventListener('change', showSectionText);
+$('sel-posture').addEventListener('change', () => {
+  if (section) void runSection();
+});
 
 // ---------- tactical problem ----------
 let problem: ProblemView | null = null;
