@@ -55,6 +55,8 @@ export function ensureSymbol(
     size: 16,
     // APP-6 colours: friendly blue fill, hostile red fill.
     fill: true,
+    // A little see-through, so map detail shows behind the symbol (PO, 15 Nov 2026).
+    fillOpacity: 0.6,
     frame: true,
     ...labels,
   });
