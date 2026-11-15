@@ -25,6 +25,8 @@ import {
   problemGeoJSON,
   sectionGeoJSON,
   sectionZonesImage,
+  companyGeoJSON,
+  companyZonesImage,
   toDataURL,
   viewshedImage,
   type BoxGeo,
@@ -33,7 +35,8 @@ import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
-import type { DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
+import type { CompanyView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
+import type { CompanyOptions } from './tactics/companyDefence';
 import type { Intel, Posture } from './tactics/sectionDefence';
 
 // ---------- state ----------
@@ -144,6 +147,8 @@ map.on('load', () => {
   map.addSource('viewshed', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('features', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('section-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
+  map.addSource('company-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
+  map.addSource('company', { type: 'geojson', data: EMPTY });
   map.addSource('section', { type: 'geojson', data: EMPTY });
   map.addSource('contours', {
     type: 'geojson',
@@ -161,6 +166,7 @@ map.on('load', () => {
   map.addLayer({ id: 'features', type: 'raster', source: 'features', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'viewshed', type: 'raster', source: 'viewshed', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({ id: 'section-zones', type: 'raster', source: 'section-zones', paint: { 'raster-fade-duration': 0 } });
+  map.addLayer({ id: 'company-zones', type: 'raster', source: 'company-zones', paint: { 'raster-fade-duration': 0 } });
   map.addLayer({
     id: 'contours',
     type: 'line',
@@ -232,6 +238,28 @@ map.on('load', () => {
   map.addLayer({
     id: 'ds-labels', type: 'symbol', source: 'ds', filter: ['!=', ['get', 'kind'], 'loc'],
     layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
+  map.addLayer({
+    id: 'company-areas', type: 'line', source: 'company', filter: ['==', ['get', 'kind'], 'area'],
+    paint: { 'line-color': '#7a0000', 'line-width': 2, 'line-dasharray': [3, 1.5] },
+  });
+  map.addLayer({
+    id: 'company-routes', type: 'line', source: 'company', filter: ['==', ['get', 'kind'], 'route'],
+    paint: { 'line-color': '#1a73e8', 'line-width': 2, 'line-dasharray': [2, 2], 'line-opacity': 0.8 },
+  });
+  map.addLayer({
+    id: 'company-points', type: 'circle', source: 'company', filter: ['match', ['get', 'kind'], ['section', 'team', 'outpost', 'hq', 'dummy', 'gap'], true, false],
+    paint: {
+      'circle-radius': ['match', ['get', 'kind'], 'team', 5, 'gap', 6, 7],
+      'circle-color': ['match', ['get', 'kind'], 'outpost', '#e8a000', 'hq', '#5a2d82', 'dummy', '#ffffff', 'gap', '#1a73e8', '#c00'],
+      'circle-stroke-color': ['match', ['get', 'kind'], 'dummy', '#c00', '#fff'],
+      'circle-stroke-width': 2,
+    },
+  });
+  map.addLayer({
+    id: 'company-labels', type: 'symbol', source: 'company', filter: ['match', ['get', 'kind'], ['area', 'route'], false, true],
+    layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top' },
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
   map.addLayer({
@@ -318,7 +346,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
@@ -365,6 +393,7 @@ async function loadGround(lat: number, lon: number, detail: Detail = chosenDetai
     clearProblem();
     clearFeatures();
     clearSection();
+    clearCompany();
     $('problem-block').hidden = false;
     status(`Ground loaded · ${gridRef(lat, lon).ref}`);
     showPosition();
@@ -422,6 +451,84 @@ async function toggleFeatures() {
 }
 
 $('btn-features').addEventListener('click', () => void toggleFeatures());
+
+// ---------- enemy company (DS view) ----------
+let company: CompanyView | null = null;
+
+function clearCompany() {
+  company = null;
+  $('co-result').hidden = true;
+  $('btn-co-toggle').hidden = true;
+  $('co-note').textContent = '';
+  if (box) (map.getSource('company-zones') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
+  (map.getSource('company') as GeoJSONSource | undefined)?.setData(EMPTY);
+}
+
+function showCompany(show: boolean) {
+  if (!box || !company?.found) return;
+  const c = company;
+  ($('btn-co-toggle') as HTMLButtonElement).textContent = show ? 'Hide layout' : 'Show layout';
+  $('co-result').hidden = !show;
+  (map.getSource('company-zones') as ImageSource).updateImage({
+    url: show ? companyZonesImage(c.maskWidth!, c.maskHeight!, c.killZone!, c.deadGround!, c.mines ?? null) : BLANK,
+    coordinates: boxCorners(box),
+  });
+  (map.getSource('company') as GeoJSONSource).setData(show ? (companyGeoJSON(box.centre, { platoons: c.platoons!, hq: c.hq, dummies: c.dummies, gaps: c.gaps, routes: c.routes }) as never) : EMPTY);
+}
+
+/** Elements forced on or off, or none (the generator decides). */
+function companyOptions(): Partial<CompanyOptions> {
+  if (($('co-auto') as HTMLInputElement).checked) return {};
+  const on = (id: string) => ($(id) as HTMLInputElement).checked;
+  return { mines: on('co-mines'), dummies: on('co-dummies'), dispersed: on('co-dispersed'), droneConcealment: on('co-drone'), isrFires: on('co-isr') };
+}
+
+const groundFitsCompany = () => !!ground && ground.width * ground.cellM === 4000;
+
+async function runCompany(seed: number) {
+  if (!box) return;
+  clearCompany();
+  $('company-block').hidden = false;
+  setBusy(true);
+  try {
+    company = await engine.company(companyOptions(), seed, status);
+    $('co-note').textContent = company.featureNote;
+    if (!company.found) {
+      $('co-note').textContent = `${company.featureNote} ${company.log.join(' ')}`;
+      status('No enemy company defence fits here');
+      return;
+    }
+    const o = company.options!;
+    const names: [keyof CompanyOptions, string][] = [['mines', 'mines and obstacles'], ['dummies', 'dummy positions'], ['dispersed', 'dispersed small teams'], ['droneConcealment', 'concealment from drones'], ['isrFires', 'drone surveillance and fires']];
+    const on = names.filter(([k]) => o[k]).map(([, n]) => n);
+    $('co-options-used').textContent = `Optional elements in this layout: ${on.length ? on.join(', ') : 'none'}.`;
+    fillList('co-notes', company.notes ?? []);
+    $('btn-co-toggle').hidden = false;
+    showCompany(true);
+    status(`Enemy company placed (${(company.timeMs / 1000).toFixed(1)} s)`);
+  } catch (err) {
+    status(`Could not place an enemy company: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$('btn-pt-company').addEventListener('click', async () => {
+  if (!selected) return;
+  if (!boxCentredOn(selected) || !groundFitsCompany()) {
+    const p = selected;
+    // A company needs the 4 km box: Medium LIDAR (5 m) in England, else standard.
+    await loadGround(p.lat, p.lon, 'medium');
+    if (!boxCentredOn(p)) return;
+    await selectPoint(p.lat, p.lon);
+  }
+  await runCompany(Math.floor(Math.random() * 1e9));
+});
+$('btn-co-new').addEventListener('click', () => void runCompany(Math.floor(Math.random() * 1e9)));
+$('btn-co-toggle').addEventListener('click', () => showCompany($('co-result').hidden === true));
+$('co-auto').addEventListener('change', () => {
+  $('co-options').hidden = ($('co-auto') as HTMLInputElement).checked;
+});
 
 // ---------- enemy section problem ----------
 let section: SectionView | null = null;

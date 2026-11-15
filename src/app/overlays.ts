@@ -185,3 +185,51 @@ export function sectionZonesImage(width: number, height: number, killZone: Uint8
   }
   return toDataURL(width, height, rgba);
 }
+
+// ---------- enemy company ----------
+
+type P = { x: number; y: number };
+/** Platoon areas, positions, the gap and the attacker's routes. */
+export function companyGeoJSON(
+  centre: LL,
+  v: {
+    platoons: { name: string; role: string; outline: P[]; positions: { kind: string; label: string; point: P }[] }[];
+    hq?: { label: string; point: P } | null;
+    dummies?: { label: string; point: P }[];
+    gaps?: { centre: P; widthM: number }[];
+    routes?: P[][];
+  },
+) {
+  const features: object[] = [];
+  for (const r of v.routes ?? []) {
+    features.push({ type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: r.map((p) => ll(centre, p)) } });
+  }
+  for (const p of v.platoons) {
+    const ring = [...p.outline, p.outline[0]].map((q) => ll(centre, q));
+    features.push({ type: 'Feature', properties: { kind: 'area', label: `${p.name} (${p.role})` }, geometry: { type: 'Polygon', coordinates: [ring] } });
+    for (const x of p.positions) {
+      features.push({ type: 'Feature', properties: { kind: x.kind, label: x.label.replace(`${p.name} `, '') }, geometry: { type: 'Point', coordinates: ll(centre, x.point) } });
+    }
+  }
+  if (v.hq) features.push({ type: 'Feature', properties: { kind: 'hq', label: v.hq.label }, geometry: { type: 'Point', coordinates: ll(centre, v.hq.point) } });
+  for (const d of v.dummies ?? []) {
+    features.push({ type: 'Feature', properties: { kind: 'dummy', label: d.label }, geometry: { type: 'Point', coordinates: ll(centre, d.point) } });
+  }
+  for (const g of v.gaps ?? []) {
+    features.push({ type: 'Feature', properties: { kind: 'gap', label: `Gap ~${Math.round(g.widthM / 10) * 10} m` }, geometry: { type: 'Point', coordinates: ll(centre, g.centre) } });
+  }
+  return { type: 'FeatureCollection' as const, features };
+}
+
+/** Company fire (orange), dead ground in front (blue) and mines (red stripes). */
+export function companyZonesImage(width: number, height: number, killZone: Uint8Array, deadGround: Uint8Array, mines: Uint8Array | null): string {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let r = 0; r < height; r++)
+    for (let c = 0; c < width; c++) {
+      const i = r * width + c;
+      if (mines && mines[i] && (r + c) % 4 < 2) rgba.set([200, 0, 0, 200], i * 4);
+      else if (deadGround[i]) rgba.set([40, 90, 220, 120], i * 4);
+      else if (killZone[i]) rgba.set([230, 90, 0, 80], i * 4);
+    }
+  return toDataURL(width, height, rgba);
+}

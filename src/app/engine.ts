@@ -2,7 +2,8 @@
  * The page's handle on the analysis worker: each request returns a promise.
  */
 import type { Posture } from '../tactics/sectionDefence';
-import type { DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
+import type { CompanyOptions } from '../tactics/companyDefence';
+import type { CompanyView, DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -31,6 +32,7 @@ export class Engine {
       else if (msg.type === 'features') p.resolve(msg.result);
       else if (msg.type === 'height') p.resolve(msg.result);
       else if (msg.type === 'section') p.resolve(msg.result);
+      else if (msg.type === 'company') p.resolve(msg.result);
     };
   }
 
@@ -57,6 +59,11 @@ export class Engine {
   /** Place an enemy section blocking the advance from the box centre, and write the scenario. */
   section(posture: Posture, random: number | undefined, onProgress?: (m: string) => void): Promise<SectionView> {
     return this.request<SectionView>({ type: 'section', posture, random }, onProgress);
+  }
+
+  /** Generate an enemy company defence across the advance from the box centre (DS view). */
+  company(options: Partial<CompanyOptions>, seed: number | undefined, onProgress?: (m: string) => void): Promise<CompanyView> {
+    return this.request<CompanyView>({ type: 'company', options, seed }, onProgress);
   }
 
   /** Ground height at a point (local metres), or null outside the loaded box. */

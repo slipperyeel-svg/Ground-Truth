@@ -186,9 +186,9 @@ export interface SectionInput {
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /** Prepare a coarser analysis grid with matching features and obstacles. */
-function analysisGrids(input: SectionInput) {
+export function analysisGrids(input: Pick<SectionInput, 'grid' | 'layers' | 'obstacles'>, cellM = SECTION_SCORING.analysisCellM) {
   const g = input.grid;
-  const factor = Math.max(1, Math.round(SECTION_SCORING.analysisCellM / g.cellM));
+  const factor = Math.max(1, Math.round(cellM / g.cellM));
   const cg = downsample(g, factor);
   const obstacles = input.obstacles ? downsampleObstacles(g, input.obstacles, factor, 'max') : undefined;
   // Land cover and going on the coarse grid: take the block's top-left cell
@@ -220,7 +220,9 @@ function analysisGrids(input: SectionInput) {
   return { cg, obstacles, layers };
 }
 
-interface Ctx {
+export interface Ctx {
+  /** Where the attacker was assumed to be looking from. */
+  viewpoints: Point[];
   cg: Grid;
   obstacles?: Obstacles;
   layers: FeatureLayers | null;
@@ -233,11 +235,63 @@ interface Ctx {
   attackerSeesMan: Uint16Array; // same, for a man moving upright
   nViewpoints: number;
   attackerBearing: number; // from the defence towards the attacker
+  /** A position must see at least this share of the route(s) in range. */
+  minRouteCover: number;
+  /** Penalty for a position with no cover within 15 m (drone concealment). */
+  openPenalty: number;
 }
 
-const fwd = (ctx: Ctx, p: Point) => (p.x - ctx.start.x) * ctx.u.x + (p.y - ctx.start.y) * ctx.u.y;
+/**
+ * Build the scoring context for one direction of advance: the attacker's
+ * route(s), and how much of each cell the attacker can see from where they
+ * will be looking (the start, points either side, and their routes up to
+ * `viewpointsToM` ahead).
+ */
+export function buildCtx(
+  base: ReturnType<typeof analysisGrids>,
+  spec: PostureSpec,
+  attackerSide: Side,
+  start: Point,
+  routes: Point[][],
+  viewpointsToM: number,
+  opts: { minRouteCover?: number; openPenalty?: number } = {},
+): Ctx {
+  const { cg, obstacles, layers } = base;
+  const S = SECTION_SCORING;
+  const u = bearingVector(SIDE_BEARING[OPPOSITE[attackerSide]]);
+  const route: Point[] = [];
+  const routeDir: Point[] = [];
+  for (const r of routes) {
+    r.forEach((q, k) => {
+      const a = r[Math.max(0, k - 3)];
+      const b = r[Math.min(r.length - 1, k + 3)];
+      const d = distance(a, b) || 1;
+      route.push(q);
+      routeDir.push({ x: (b.x - a.x) / d, y: (b.y - a.y) / d });
+    });
+  }
+  const v = { x: u.y, y: -u.x };
+  const viewpoints: Point[] = [start, { x: start.x + v.x * 200, y: start.y + v.y * 200 }, { x: start.x - v.x * 200, y: start.y - v.y * 200 }];
+  for (const q of route) {
+    const f = (q.x - start.x) * u.x + (q.y - start.y) * u.y;
+    if (f > -300 && f < viewpointsToM && !viewpoints.some((w) => distance(w, q) < 120)) viewpoints.push(q);
+  }
+  const vpObs = viewpoints.map((p) => ({ point: p }));
+  return {
+    cg, obstacles, layers, spec, u, start, route, routeDir,
+    attackerSees: visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: spec.exposedM, maxRangeM: 1500, obstacles }),
+    attackerSeesMan: visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: S.manHeightM, maxRangeM: 1500, obstacles }),
+    nViewpoints: viewpoints.length,
+    attackerBearing: SIDE_BEARING[attackerSide],
+    minRouteCover: opts.minRouteCover ?? S.minRouteCover,
+    openPenalty: opts.openPenalty ?? 0,
+    viewpoints,
+  };
+}
 
-function standable(ctx: Ctx, p: Point): boolean {
+export const fwd = (ctx: Ctx, p: Point) => (p.x - ctx.start.x) * ctx.u.x + (p.y - ctx.start.y) * ctx.u.y;
+
+export function standable(ctx: Ctx, p: Point): boolean {
   const c = pointToCell(ctx.cg, p);
   if (c.col < 0 || c.row < 0 || c.col >= ctx.cg.width || c.row >= ctx.cg.height) return false;
   const i = c.row * ctx.cg.width + c.col;
@@ -249,7 +303,7 @@ function standable(ctx: Ctx, p: Point): boolean {
 }
 
 /** Easiest route (least going) from the start to the given edge of the box. */
-function routeFromStart(g: Grid, going: Float32Array, start: Point, toSide: Side): Point[] | null {
+export function routeFromStart(g: Grid, going: Float32Array, start: Point, toSide: Side): Point[] | null {
   const sc = pointToCell(g, start);
   const s0 = sc.row * g.width + sc.col;
   const { cost, prev } = costDistance(g, going, [s0]);
@@ -268,7 +322,7 @@ function routeFromStart(g: Grid, going: Float32Array, start: Point, toSide: Side
  * towards the attacker, the ground rises to a high point 50–300 m away and
  * then falls away beyond it.
  */
-function crestInFront(ctx: Ctx, p: Point): { distanceM: number; point: Point } | null {
+export function crestInFront(ctx: Ctx, p: Point): { distanceM: number; point: Point } | null {
   const S = SECTION_SCORING;
   const g = ctx.cg;
   const back = { x: -ctx.u.x, y: -ctx.u.y };
@@ -289,7 +343,7 @@ function crestInFront(ctx: Ctx, p: Point): { distanceM: number; point: Point } |
 }
 
 /** Score one position. Returns null if it does not block the route. */
-function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
+export function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
   const { cg, spec } = ctx;
   const S = SECTION_SCORING;
   const vs = viewshed(cg, p, { obsHeightM: spec.eyeM, targetHeightM: S.attackerHeightM, maxRangeM: spec.gunRangeM, obstacles: ctx.obstacles });
@@ -339,7 +393,7 @@ function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
     if (lx * ctx.routeDir[k].x + ly * ctx.routeDir[k].y > headOn) rFlank++;
   });
   const routeCover = rIn ? rSeen / rIn : 0;
-  if (routeCover < S.minRouteCover) return null;
+  if (routeCover < ctx.minRouteCover) return null;
 
   const i = pc.row * cg.width + pc.col;
   const exposure = ctx.nViewpoints ? ctx.attackerSees[i] / ctx.nViewpoints : 0;
@@ -398,13 +452,14 @@ function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
     w.reverse * (reverseSlope ? 1 : 0) +
     spec.coverWeight * (nearCover ? 1 : 0) +
     w.rear * coveredRear -
-    w.skyline * (skylined ? 1 : 0);
+    w.skyline * (skylined ? 1 : 0) -
+    ctx.openPenalty * (nearCover ? 0 : 1);
   return { ...scores, total, vs };
 }
 
 /** Place a section for one direction of advance. */
 function placeForSide(input: SectionInput, base: ReturnType<typeof analysisGrids>, attackerSide: Side) {
-  const { cg, obstacles, layers } = base;
+  const { cg, layers } = base;
   const S = SECTION_SCORING;
   const spec = POSTURES[input.posture];
   const slopeDeg = slopeOf(cg);
@@ -416,31 +471,8 @@ function placeForSide(input: SectionInput, base: ReturnType<typeof analysisGrids
   if (!route) return { log: `Advancing ${dirName(attackerSide)}: no route from your position.`, best: null };
 
   const advanceBearingDeg = SIDE_BEARING[OPPOSITE[attackerSide]];
-  const u = bearingVector(advanceBearingDeg);
-  const routeDir = route.map((_, k) => {
-    const a = route[Math.max(0, k - 3)];
-    const b = route[Math.min(route.length - 1, k + 3)];
-    const d = distance(a, b) || 1;
-    return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
-  });
-
-  // Where the attacker will be looking from: the start, points either side of
-  // it, and the route between the start and the nearest candidate positions.
-  const v = { x: u.y, y: -u.x };
-  const viewpoints: Point[] = [start, { x: start.x + v.x * 200, y: start.y + v.y * 200 }, { x: start.x - v.x * 200, y: start.y - v.y * 200 }];
-  for (const q of route) {
-    const f = (q.x - start.x) * u.x + (q.y - start.y) * u.y;
-    if (f > -300 && f < S.forwardMinM - 50 && !viewpoints.some((w) => distance(w, q) < 120)) viewpoints.push(q);
-  }
-  const vpObs = viewpoints.map((p) => ({ point: p }));
-  const attackerSees = visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: spec.exposedM, maxRangeM: 1500, obstacles });
-  const attackerSeesMan = visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: S.manHeightM, maxRangeM: 1500, obstacles });
-
-  const ctx: Ctx = {
-    cg, obstacles, layers, spec, u, start, route, routeDir, attackerSees, attackerSeesMan,
-    nViewpoints: viewpoints.length,
-    attackerBearing: SIDE_BEARING[attackerSide],
-  };
+  const ctx = buildCtx(base, spec, attackerSide, start, [route], S.forwardMinM - 50);
+  const viewpoints = ctx.viewpoints;
 
   // Coarse search.
   const half = (cg.width * cg.cellM) / 2;

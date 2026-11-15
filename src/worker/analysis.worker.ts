@@ -17,7 +17,7 @@ import {
 import { contours, chooseInterval } from '../terrain/contours';
 import { coneHill, convexRidge, flatPlane, fromFunction, vValley } from '../terrain/synthetic';
 import { browserTileSource } from '../terrain/tiles-browser';
-import { LIDAR_DETAIL, type DemoTerrain, type FeaturesView, type ProblemView, type SectionView, type WorkerRequest, type WorkerResponse } from './protocol';
+import { LIDAR_DETAIL, type CompanyView, type DemoTerrain, type FeaturesView, type ProblemView, type SectionView, type WorkerRequest, type WorkerResponse } from './protocol';
 import { featureImage } from '../features/render';
 import { fetchFeatures } from '../features/osm';
 import { buildLayers, type FeatureLayers } from '../features/layers';
@@ -27,6 +27,9 @@ import { buildObstacles, type Obstacles } from '../features/obstacles';
 import { loadLidar } from '../terrain/lidar';
 import { placeEnemySection } from '../tactics/sectionDefence';
 import { writeSectionScenario } from '../tactics/sectionScenario';
+import { placeEnemyCompany } from '../tactics/companyDefence';
+import { localToLatLon } from '../terrain/elevation';
+import { gridRef } from '../geo/gridref';
 import { inGreatBritain } from '../geo/gridref';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -255,6 +258,56 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         timeMs: Math.round(performance.now() - t0),
       };
       post({ type: 'section', id: req.id, result: view }, view.ds ? [view.ds.killZone.buffer, view.ds.deadGround.buffer] : []);
+    } else if (req.type === 'company') {
+      if (!grid) throw new Error('No ground loaded yet');
+      const progress = (message: string) => post({ type: 'progress', id: req.id, message });
+      const t0 = performance.now();
+      await ensureLayers(progress);
+      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, progress });
+      const g = grid;
+      const ref = (p: { x: number; y: number }) => {
+        const c = g.meta.centre;
+        if (!c) return `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+        const ll = localToLatLon(c, p.x, p.y);
+        return gridRef(ll.lat, ll.lon, 4).ref;
+      };
+      const notes: string[] = [];
+      if (L) {
+        notes.push(...L.reasons);
+        for (const p of L.platoons) notes.push(`${p.name}: ${p.positions.map((x) => `${x.label.replace(p.name + ' ', '')} ${ref(x.point)}`).join('; ')}.`);
+        if (L.hq) notes.push(`Coy HQ ${ref(L.hq.point)}.`);
+        if (L.dummies.length) notes.push(`Dummies: ${L.dummies.map((d) => ref(d.point)).join('; ')}.`);
+        if (L.gaps[0]) notes.push(`Gap centred ${ref(L.gaps[0].centre)}.`);
+        notes.push(`How the direction was chosen: ${L.log.join(' ')}`);
+      }
+      const keep = (_: unknown, k: number, a: unknown[]) => k % 4 === 0 || k === a.length - 1;
+      const view: CompanyView = L
+        ? {
+            found: true,
+            log: L.log,
+            featureNote,
+            advanceBearingDeg: L.advanceBearingDeg,
+            options: L.options,
+            platoons: L.platoons.map((p) => ({ name: p.name, role: p.role, outline: p.outline, positions: p.positions })),
+            hq: L.hq,
+            dummies: L.dummies,
+            gaps: L.gaps,
+            routes: L.routes.map((r) => r.filter(keep)),
+            maskWidth: L.maskWidth,
+            maskHeight: L.maskHeight,
+            killZone: L.killZone,
+            deadGround: L.deadGround,
+            mines: L.mines,
+            notes,
+            timeMs: Math.round(performance.now() - t0),
+          }
+        : { found: false, log: ['No sensible company defence fits ahead of you in any direction.'], featureNote, timeMs: Math.round(performance.now() - t0) };
+      const transfer: Transferable[] = [];
+      if (L) {
+        transfer.push(L.killZone.buffer, L.deadGround.buffer);
+        if (L.mines) transfer.push(L.mines.buffer);
+      }
+      post({ type: 'company', id: req.id, result: view }, transfer);
     } else if (req.type === 'height') {
       const half = grid ? (grid.width * grid.cellM) / 2 : 0;
       const inside = !!grid && Math.abs(req.x) <= half && Math.abs(req.y) <= half;

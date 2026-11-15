@@ -2,6 +2,7 @@
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
+import type { CompanyOptions, PositionKind } from '../tactics/companyDefence';
 import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
 import type { ContourLine } from '../terrain/contours';
@@ -52,6 +53,14 @@ export type WorkerRequest =
       posture: Posture;
       /** 0–1 to pick among the best few positions for variety; omit for the best. */
       random?: number;
+    }
+  | {
+      /** Generate an enemy company defence across the user's advance from the box centre. */
+      type: 'company';
+      id: number;
+      /** Elements forced on or off; any left out are decided by the generator. */
+      options: Partial<CompanyOptions>;
+      seed?: number;
     }
   | {
       /** Ground height at a point (local metres), or null outside the loaded box. */
@@ -129,6 +138,28 @@ export interface SectionView {
   timeMs: number;
 }
 
+/** An enemy company layout for the DS reveal. Positions in local metres. */
+export interface CompanyView {
+  found: boolean;
+  log: string[];
+  featureNote: string;
+  advanceBearingDeg?: number;
+  options?: CompanyOptions;
+  platoons?: { name: string; role: 'forward' | 'depth'; outline: Point[]; positions: { kind: PositionKind; label: string; point: Point; men: number }[] }[];
+  hq?: { label: string; point: Point } | null;
+  dummies?: { label: string; point: Point }[];
+  gaps?: { centre: Point; widthM: number; coveredFromDepth: number }[];
+  routes?: Point[][];
+  maskWidth?: number;
+  maskHeight?: number;
+  killZone?: Uint8Array;
+  deadGround?: Uint8Array;
+  mines?: Uint8Array | null;
+  /** DS notes: reasons and grid references. */
+  notes?: string[];
+  timeMs: number;
+}
+
 /** A problem, ready to show. Positions are local metres from the box centre. */
 export interface ProblemView {
   found: boolean;
@@ -159,4 +190,5 @@ export type WorkerResponse =
   | { type: 'features'; id: number; result: FeaturesView }
   | { type: 'height'; id: number; result: number | null }
   | { type: 'section'; id: number; result: SectionView }
+  | { type: 'company'; id: number; result: CompanyView }
   | { type: 'error'; id: number; message: string };

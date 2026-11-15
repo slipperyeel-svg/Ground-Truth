@@ -107,3 +107,5 @@ button.floating {
 .maplibregl-canvas-container.maplibregl-interactive { cursor: crosshair; }
 .ctrl-crosshair button { font-size: 20px; line-height: 1; }
 .ctrl-crosshair button.on { background: var(--olive); color: #fff; }
+
+#co-notes { padding-left: 20px; margin: 4px 0; font-size: 14px; line-height: 1.4; }
