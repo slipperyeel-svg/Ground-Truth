@@ -16,14 +16,21 @@
     </div>
 
     <header id="topbar">
-      <span class="brand">Ground Truth</span>
+      <button id="btn-menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu">
+        <span></span><span></span><span></span>
+      </button>
+      <span class="brand">Ground Truth <span id="mode-name">· Problem</span></span>
       <span id="status" role="status" aria-live="polite">Ready</span>
     </header>
 
-    <nav id="modes" aria-label="Mode">
+    <!-- The menu (top left): the modes, then settings; room for more later. -->
+    <div id="menu-backdrop" hidden></div>
+    <nav id="menu" aria-label="Menu" hidden>
       <button data-mode-tab="problem" class="active">Problem</button>
       <button data-mode-tab="ds">DS</button>
       <button data-mode-tab="dev" hidden>Developer</button>
+      <hr />
+      <button data-mode-tab="settings">Settings</button>
     </nav>
 
 
@@ -430,16 +437,21 @@
       </div>
       </div>
 
-      <!-- Map settings, on every page -->
+      <!-- ================= SETTINGS ================= -->
+      <div data-modes="settings">
+      <div class="block">
+      <div class="label">Map</div>
       <div class="row toggles">
         <label><input type="checkbox" id="tg-hillshade" checked /> Hillshade</label>
         <label><input type="checkbox" id="tg-contours" checked /> Contours</label>
         <label><input type="checkbox" id="tg-grid" checked /> Grid</label>
       </div>
       <div class="row selects">
-        <label>Map
+        <label>Base map
           <select id="sel-base"></select>
         </label>
+      </div>
+      </div>
       </div>
     </section>
 

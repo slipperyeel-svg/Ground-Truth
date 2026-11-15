@@ -755,7 +755,7 @@ function showScenarioDS(show: boolean) {
 }
 
 // ---------- modes: Problem, DS, Developer (PO, 15 Nov 2026) ----------
-type Mode = 'problem' | 'ds' | 'dev';
+type Mode = 'problem' | 'ds' | 'dev' | 'settings';
 let mode: Mode = 'problem';
 type Stage = 'start' | 'read' | 'plan' | 'develop' | 'truth';
 let stage: Stage = 'start';
@@ -771,17 +771,36 @@ const devAllowed = (() => {
 })();
 document.querySelector<HTMLButtonElement>('[data-mode-tab="dev"]')!.hidden = !devAllowed;
 
+const MODE_NAME: Record<Mode, string> = { problem: 'Problem', ds: 'DS', dev: 'Developer', settings: 'Settings' };
 function setMode(m: Mode) {
   mode = m;
   document.body.dataset.mode = m;
+  $('mode-name').textContent = `· ${MODE_NAME[m]}`;
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) b.classList.toggle('active', b.dataset.modeTab === m);
   planTool = null;
-  // The ground truth shows on the DS page at any time, and on the Problem page once revealed.
-  if (scenario?.scenario) showScenarioDS(m === 'ds' || (m === 'problem' && revealed));
+  // The ground truth shows on the DS page at any time, and on the Problem page once revealed
+  // (Settings leaves the map as it was).
+  if (scenario?.scenario && m !== 'settings') showScenarioDS(m === 'ds' || (m === 'problem' && revealed));
   if (m === 'ds') void fillDsPage();
   renderPlan();
 }
-for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) b.addEventListener('click', () => setMode(b.dataset.modeTab as Mode));
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]'))
+  b.addEventListener('click', () => {
+    setMode(b.dataset.modeTab as Mode);
+    openMenu(false);
+  });
+
+/** The menu, top left: opens over the map; closes on a choice, a tap outside it, or Escape. */
+function openMenu(open: boolean) {
+  $('menu').hidden = !open;
+  $('menu-backdrop').hidden = !open;
+  $('btn-menu').setAttribute('aria-expanded', String(open));
+}
+$('btn-menu').addEventListener('click', () => openMenu($('menu').hidden === true));
+$('menu-backdrop').addEventListener('click', () => openMenu(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') openMenu(false);
+});
 
 /** Which stages of the Problem page can be opened: each once it has been reached. */
 function updateStepbar() {
