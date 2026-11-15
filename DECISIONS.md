@@ -128,3 +128,20 @@ The engine now reads the features of the ground as well as its shape, finds the 
 78. **First runs (15 Nov 2026), about 6 s from tap to problem including loading:** Westdown (SU 0654 5055) and Brecon (SO 1071 2651) each produced a problem; Larkhill (SU 1453 4330) did not (in every direction the best-view OP was already unseen by enemy OPs, so there was no dilemma).
 79. **PO to judge:** at Westdown an enemy OP was placed inside NAI 1 (Prospect Clump, on the enemy's own route). Enemy OPs are not currently kept away from the NAI or the enemy's route.
 80. **Map attribution** is kept folded behind its (i) button, re-folded whenever the map settles unless the user opened it; it was opening over the bottom of the map and hiding the NAI.
+
+## Enemy layout generation: direction from the PO (15 Nov 2026)
+
+81. **Focus: generating a likely enemy layout from the ground**, starting with a section-level defence the user must plan against, inside a scenario frame ("enemy are defending in the area of X to block movement north along Y"). Problems move to generic infantry, platoon level.
+82. **PO: what the user is told is a scenario option**, not fixed: exact position, area only, or direction only.
+83. **PO: enemy posture is a set of scenario options**, not one model: e.g. prepared defence, hasty defence, enemy patrol, each with its own strength, weapons, ranges and eye height. To be specified with the PO.
+84. **PO: the app picks the direction of the enemy's block from the ground** (the most defensible blocking position on a clear route).
+85. **PO: add fine LIDAR elevation (England) first**, before building section placement.
+
+## Fine elevation: Environment Agency LIDAR (15 Nov 2026)
+
+86. **Source:** Environment Agency LIDAR composite, 1 m, England (about 99% coverage, ±15 cm), via its open WCS 2.0 service at `environment.data.gov.uk` (allowed in the cloud environment; CORS open). Two layers: **DTM** (bare ground) and **first-return DSM** (tops of hedges, trees, walls, buildings). DSM − DTM gives the measured height of whatever stands on the ground; heights under 0.5 m are treated as noise. Licence: Open Government Licence, attribution "Contains Environment Agency information © Environment Agency and/or database right".
+87. **Fine detail = a 2 km box at 2 m.** Requested in British National Grid with `SCALEFACTOR=0.5`; about 4 MB per layer (8 MB total), about 2 s each from the cloud workspace. A 4 km box at 2 m would be about 32 MB, too heavy for a phone. The rasters are sampled onto the engine's local grid by an affine BNG fit (sub-centimetre over a few km). Gaps (no data) under 5% of the box are filled from neighbours; more than that, or outside England, falls back to the standard 30 m data with a note.
+88. **Obstacles from LIDAR.** With fine detail, sight is blocked by the measured heights everywhere; mapped OS woods still mark where the "see 15 m into a wood" rule applies. Without LIDAR, the standard heights (woods 15 m, buildings 8 m, hedges 2 m) remain.
+89. **Detail choice in the panel:** Fine (LIDAR 2 m, 2 km) is the default; Standard (30 m, 4 km) remains. The problem engine (Template A) is built for the standard 4 km box, so "Set a problem" reloads the box at standard detail.
+90. **TIFF reading** is done by a small reader in our own code (`src/terrain/tiff.ts`: one band of float32, uncompressed, strips or tiles, either byte order). No new dependency.
+91. **Open question (under investigation):** a viewshed from SU 1442 4319 (Larkhill) with LIDAR obstacles showed 0% visible. Likely the point was under a tree line, where measured canopy all round blocks every direction; to be confirmed from an open point (the EA server stopped responding during the test). If confirmed, the app should warn when the observer is standing in vegetation.

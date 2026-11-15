@@ -59,7 +59,7 @@ npm run typecheck
 - **OS key:** set `VITE_OS_KEY` as an environment variable, or in `.env.local` (git-ignored). Never commit the key. Without it the app uses OpenStreetMap only.
 - **Demo ground for indoor testing:** `?demo=ridge` (or `cone`, `valley`, `flat`). Other URL options: `?lat=..&lon=..` to choose the place, `&autoload=1` to load straight away, `&vs=x,y` to draw a viewshed from local metres x,y.
 - **Real-ground check of the tactics:** `NETWORK=1 npm test`; add `LAT=.. LON=..` to choose the place and `RENDER=out` to draw `out-N.png` etc.
-- **Network:** the environment also allows `overpass-api.de` (features) and the live site, but Overpass drops connections from the cloud workspace (DECISIONS.md 44).
+- **Network:** the environment also allows `overpass-api.de` (features), `environment.data.gov.uk` (LIDAR) and the live site, but Overpass drops connections from the cloud workspace (DECISIONS.md 44).
 - **Hosting:** phones only allow location on https sites. `.github/workflows/pages.yml` builds, tests and deploys to GitHub Pages on every push to `main` (Repository Settings → Pages → Source: GitHub Actions). The workflow passes the OS key to the build from a repository secret named `VITE_OS_KEY`; the PO needs to create it (Settings → Secrets and variables → Actions).
 - Claude.ai artifacts **cannot** host this app: they block location, outside servers and service workers.
 
@@ -80,6 +80,8 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/terrain/crest.ts` | Topographical and military crests relative to the enemy; `isSilhouetted` |
 | `src/terrain/classify.ts` | flat / rolling / ridge / valley, with plain-English reasons |
 | `src/terrain/contours.ts` | Marching-squares contours |
+| `src/terrain/lidar.ts` | Environment Agency LIDAR (bare ground + surface) for a box, sampled onto the local grid |
+| `src/terrain/tiff.ts` | Small reader for float32 GeoTIFFs |
 | `src/terrain/elevation.ts` | Terrarium tile loader (injected `TileSource`); OS Terrain 50 ASCII grid parser |
 | `src/terrain/tiles-browser.ts` | Browser tile fetch and decode |
 | `src/terrain/analyse.ts` | Runs the whole analysis on a box (placeholder enemy observers) |
@@ -115,7 +117,7 @@ The analysis of a 4 km box at 10 m cells takes about 0.2 s on a desktop-class CP
 |---|---|---|
 | Elevation (default, global) | AWS Terrain Tiles, Terrarium PNG, zoom 13 | `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`. Decode: `(R*256 + G + B/256) - 32768`. In GB this is mostly **EU-DEM (~30 m, a surface model)**: woods and towns may read as raised ground. Reported resolution is never finer than 30 m. |
 | Elevation (GB, fallback) | OS Terrain 50 (ASCII grid) | Parser done; wiring a GPS position to it needs BNG conversion (available in `gridref.ts`). |
-| Elevation (England, fine) | Environment Agency LIDAR DTM, 1–2 m | Later. Would enable section/platoon problems. |
+| Elevation (England, fine) | **Environment Agency LIDAR**, DTM + first-return DSM, via WCS at `environment.data.gov.uk`, 2 km box at 2 m | Default "Fine" detail. `src/terrain/lidar.ts`, `src/terrain/tiff.ts`. DSM − DTM = measured obstacle heights. DECISIONS.md 86–91. |
 | Base map, GB (default) | **OS open map**: OS Vector Tile API, OS's own style, tiles capped at zoom 15 | OS OpenData: free and unlimited. Never request vector tiles above zoom 15 (premium MasterMap). |
 | Base map, GB (optional) | OS Maps API: `Leisure_27700` (1:25k, premium, warped in-app) and `Outdoor_3857` | Premium beyond the free £1,000/month: not sustainable for public release (DECISIONS.md 56). |
 | Base map, elsewhere | OpenStreetMap standard tiles | Fine for development only. **Needs a proper provider before wider release.** |

@@ -43,11 +43,11 @@ export class Engine {
   load(
     lat: number,
     lon: number,
-    opts: { sizeM?: number; cellM?: number; demo?: DemoTerrain } = {},
+    opts: { sizeM?: number; cellM?: number; demo?: DemoTerrain; detail?: 'fine' | 'standard' } = {},
     onProgress?: (m: string) => void,
   ): Promise<LoadedGround> {
     return this.request<LoadedGround>(
-      { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo },
+      { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo, detail: opts.detail },
       onProgress,
     );
   }

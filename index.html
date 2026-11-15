@@ -21,6 +21,14 @@
     </header>
 
     <section id="panel" aria-label="Controls">
+      <div class="row selects">
+        <label>Ground detail
+          <select id="sel-detail">
+            <option value="fine" selected>Fine: LIDAR 2 m, 2 km box (England)</option>
+            <option value="standard">Standard: 30 m data, 4 km box</option>
+          </select>
+        </label>
+      </div>
       <div class="row buttons">
         <button id="btn-here" class="primary">Load ground at my position</button>
         <button id="btn-load-point">Load at selected point</button>

@@ -61,11 +61,23 @@ function groundUnderWoods(g: Grid, wood: Mask): Float32Array {
   return base;
 }
 
-export function buildObstacles(g: Grid, L: FeatureLayers, H = OBSTACLE_HEIGHTS): Obstacles {
+/**
+ * Obstacles for a grid. With LIDAR (`surfaceM`, the measured height of
+ * whatever stands on each cell), those real heights are used everywhere and
+ * the map features only mark which cells are woods (for the "see 15 m in"
+ * rule). Without LIDAR, the standard heights are applied to the mapped woods,
+ * buildings and hedges.
+ */
+export function buildObstacles(g: Grid, L: FeatureLayers | null, surfaceM?: Float32Array, H = OBSTACLE_HEIGHTS): Obstacles {
   const n = g.width * g.height;
   const heightM = new Float32Array(n);
   const wood = new Uint8Array(n);
-  for (let i = 0; i < n; i++) if (L.cover[i] === COVER.wood) wood[i] = 1;
+  if (L) for (let i = 0; i < n; i++) if (L.cover[i] === COVER.wood) wood[i] = 1;
+  if (surfaceM && surfaceM.length === n) {
+    heightM.set(surfaceM);
+    return { heightM, wood, seeIntoWoodM: H.seeIntoWoodM };
+  }
+  if (!L) return { heightM, wood, seeIntoWoodM: H.seeIntoWoodM };
   const base = groundUnderWoods(g, wood);
   for (let i = 0; i < n; i++) {
     if (wood[i]) heightM[i] = Math.max(0, base[i] + H.woodM - g.data[i]);

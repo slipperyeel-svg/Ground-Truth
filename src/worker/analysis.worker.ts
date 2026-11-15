@@ -23,6 +23,7 @@ import { buildLayers, type FeatureLayers } from '../features/layers';
 import { generateProblem } from '../tactics/problem';
 import { fetchCombinedFeatures } from '../features/osVector';
 import { buildObstacles, type Obstacles } from '../features/obstacles';
+import { loadLidar } from '../terrain/lidar';
 import { inGreatBritain } from '../geo/gridref';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -31,6 +32,8 @@ let isDemo = false;
 /** Map features for the loaded ground: fetched once, on the first problem request. */
 let layers: FeatureLayers | null = null;
 let obstacles: Obstacles | null = null;
+/** Measured height of hedges, trees and buildings (LIDAR DSM − DTM), when fine detail is loaded. */
+let lidarSurface: Float32Array | null = null;
 let featureNote = '';
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) => ctx.postMessage(msg, transfer);
@@ -80,7 +83,7 @@ async function ensureLayers(progress: (m: string) => void): Promise<void> {
       fetchOsm: (pathsAndHedgesOnly) => fetchFeatures(centre, sizeM, { pathsAndHedgesOnly }),
     });
     layers = buildLayers(grid, combined.set);
-    obstacles = buildObstacles(grid, layers);
+    obstacles = buildObstacles(grid, layers, lidarSurface ?? undefined);
     const c = layers.counts;
     const roads = (c['major-road'] ?? 0) + (c['minor-road'] ?? 0) + (c.motorway ?? 0);
     featureNote =
@@ -100,13 +103,37 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       isDemo = !!req.demo;
       layers = null;
       obstacles = null;
+      lidarSurface = null;
       featureNote = '';
-      grid = req.demo
-        ? demoGrid(req.demo, req.sizeM, req.cellM, req.lat, req.lon)
-        : await loadElevation(req.lat, req.lon, req.sizeM, req.cellM, {
-            source: browserTileSource(),
-            onProgress: progress,
-          });
+      let detailNote = '';
+      let lidar = false;
+      grid = null;
+      if (!req.demo && req.detail === 'fine') {
+        if (!inGreatBritain(req.lat, req.lon)) detailNote = 'Fine (LIDAR) detail is only available in England.';
+        else {
+          try {
+            const l = await loadLidar({ lat: req.lat, lon: req.lon }, 2000, 2, { onProgress: progress });
+            if (l) {
+              grid = l.grid;
+              lidar = true;
+              if (l.surfaceM.length) {
+                lidarSurface = l.surfaceM;
+                obstacles = buildObstacles(grid, null, lidarSurface);
+              }
+            } else detailNote = 'No LIDAR here (it covers most of England only), so standard detail is used.';
+          } catch (err) {
+            detailNote = `LIDAR could not be loaded (${err instanceof Error ? err.message : String(err)}), so standard detail is used.`;
+          }
+        }
+      }
+      if (!grid) {
+        grid = req.demo
+          ? demoGrid(req.demo, req.sizeM, req.cellM, req.lat, req.lon)
+          : await loadElevation(req.lat, req.lon, req.sizeM, req.cellM, {
+              source: browserTileSource(),
+              onProgress: progress,
+            });
+      }
       progress('Analysing the ground…');
       const hs = hillshade(grid);
       const interval = chooseInterval(grid);
@@ -121,6 +148,8 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           type: 'loaded',
           id: req.id,
           ground: {
+            lidar,
+            detailNote,
             width: grid.width,
             height: grid.height,
             cellM: grid.cellM,
@@ -143,7 +172,9 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const useObs = req.useObstacles && !!obstacles;
       const obstaclesNote = !req.useObstacles
         ? 'Woods, buildings and hedges ignored (bare ground).'
-        : useObs
+        : useObs && lidarSurface
+          ? 'Hedges, trees, walls and buildings block sight at their measured (LIDAR) heights; you see 15 m into mapped woods.'
+          : useObs
           ? 'Woods (15 m, seen 15 m in), buildings (8 m) and hedges (2 m) block sight.'
           : isDemo
             ? 'Demo ground has no woods or buildings.'

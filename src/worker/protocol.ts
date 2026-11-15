@@ -16,6 +16,11 @@ export type WorkerRequest =
       cellM: number;
       /** Use synthetic ground instead of real data (for testing indoors). */
       demo?: DemoTerrain;
+      /**
+       * 'fine': Environment Agency LIDAR at 2 m over a 2 km box where it exists
+       * (England), else falls back to standard. 'standard': ~30 m data, sizeM/cellM as given.
+       */
+      detail?: 'fine' | 'standard';
     }
   | {
       type: 'viewshed';
@@ -48,6 +53,10 @@ export type WorkerRequest =
     };
 
 export interface LoadedGround {
+  /** True if the ground came from LIDAR (fine detail). */
+  lidar: boolean;
+  /** Why fine detail was not used, if it was asked for and is not available. */
+  detailNote: string;
   width: number;
   height: number;
   cellM: number;

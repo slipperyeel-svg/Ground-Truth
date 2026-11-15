@@ -298,11 +298,14 @@ function setBusy(busy: boolean) {
   for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
-async function loadGround(lat: number, lon: number) {
+/** The ground detail chosen in the panel, unless a caller insists on one. */
+const chosenDetail = () => ($('sel-detail') as HTMLSelectElement).value as 'fine' | 'standard';
+
+async function loadGround(lat: number, lon: number, detail: 'fine' | 'standard' = chosenDetail()) {
   setBusy(true);
   status(demo ? 'Building demo ground…' : 'Fetching elevation data…');
   try {
-    ground = await engine.load(lat, lon, { demo }, status);
+    ground = await engine.load(lat, lon, { demo, detail }, status);
     box = { centre: { lat, lon }, halfM: (ground.width * ground.cellM) / 2 };
     if (!baseChosenByUser) setBaseMap(defaultBaseFor(lat, lon));
     const corners = boxCorners(box);
@@ -329,7 +332,8 @@ async function loadGround(lat: number, lon: number) {
       `${g.reasons.join(' ')} Heights ${Math.round(ground.minM)}–${Math.round(ground.maxM)} m; contours every ${ground.contourIntervalM} m.`;
     const m = ground.meta;
     $('data-source').textContent =
-      `Source: ${m.source}. Data resolution about ${Math.round(m.sourceResolutionM)} m. ${m.notes.join(' ')}`;
+      `Source: ${m.source}. Data resolution about ${Math.round(m.sourceResolutionM)} m. ${m.notes.join(' ')}` +
+      (ground.detailNote ? ` ${ground.detailNote}` : '');
     $('ground-info').hidden = false;
     $('vs-block').hidden = false;
     clearProblem();
@@ -413,6 +417,13 @@ function fillList(id: string, items: string[]) {
 
 async function setProblem() {
   if (!box) return;
+  if (ground?.lidar) {
+    // The problem engine is built for the standard 4 km box at ~30 m.
+    status('Problems use standard detail: reloading the 4 km box…');
+    const c = box.centre;
+    await loadGround(c.lat, c.lon, 'standard');
+    if (!box || ground?.lidar) return;
+  }
   clearProblem();
   setBusy(true);
   status('Reading the ground…');
@@ -641,7 +652,12 @@ $('btn-load-point').addEventListener('click', () => void loadAtSelected());
 
 $('btn-pt-problem').addEventListener('click', async () => {
   if (!selected) return;
-  if (!boxCentredOn(selected) && !(await loadAtSelected())) return;
+  if (!boxCentredOn(selected) || ground?.lidar) {
+    const p = selected;
+    await loadGround(p.lat, p.lon, 'standard');
+    if (!boxCentredOn(p)) return;
+    await selectPoint(p.lat, p.lon);
+  }
   await setProblem();
   $('problem-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
