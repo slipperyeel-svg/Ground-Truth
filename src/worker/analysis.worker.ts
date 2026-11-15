@@ -11,6 +11,7 @@ import {
   inRangeMask,
   loadElevation,
   viewshed,
+  pointToCell,
   type Grid,
 } from '../terrain';
 import { contours, chooseInterval } from '../terrain/contours';
@@ -179,6 +180,22 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           : isDemo
             ? 'Demo ground has no woods or buildings.'
             : 'Woods and buildings could not be loaded, so they are ignored.';
+      // Warn if the observer is standing in or right beside something taller
+      // than their eye (trees, a building): it will block most of the view.
+      let blockedNote = '';
+      if (useObs) {
+        const oc = pointToCell(grid, p);
+        const R = Math.max(1, Math.round(6 / grid.cellM));
+        let tallest = 0;
+        for (let dr = -R; dr <= R; dr++)
+          for (let dc = -R; dc <= R; dc++) {
+            const r = oc.row + dr;
+            const c = oc.col + dc;
+            if (r >= 0 && c >= 0 && r < grid.height && c < grid.width) tallest = Math.max(tallest, obstacles!.heightM[r * grid.width + c]);
+          }
+        if (tallest > req.obsHeightM)
+          blockedNote = ` Warning: you are standing in or right beside something about ${Math.round(tallest)} m tall (trees or a building), which blocks your view. Move clear of it.`;
+      }
       const opts = {
         obsHeightM: req.obsHeightM,
         targetHeightM: req.targetHeightM,
@@ -196,7 +213,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
             observerGroundM: elevationAtPoint(grid, p),
             visibleShare: inRange ? countMask(mask) / inRange : 0,
             timeMs: Math.round(performance.now() - t0),
-            obstaclesNote,
+            obstaclesNote: obstaclesNote + blockedNote,
           },
         },
         [mask.buffer],
