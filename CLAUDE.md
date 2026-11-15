@@ -1,4 +1,6 @@
-# Ground Truth — project brief for Claude Code
+# Vital Ground — project brief for Claude Code
+
+*Renamed from "Ground Truth" (PO, 15 Nov 2026). The repository, the live address and internal storage keys keep the old name for now.*
 
 Phone app that sets a short, Moltke-style tactical problem on the ground where the user is standing. The user walks to the positions they choose, answers, and gets directing-staff (DS) feedback based on computed terrain facts.
 

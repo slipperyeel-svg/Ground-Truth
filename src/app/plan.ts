@@ -62,7 +62,7 @@ export const drawnRoutes = (plan: PlanState) => ROUTE_WHO.filter((w) => plan.rou
 /** Elements with no route yet. */
 export const missingRoutes = (plan: PlanState) => ROUTE_WHO.filter((w) => plan.routes[w].length < 2);
 
-const KEY = 'ground-truth.plan.v2'; // v2: one route per element
+const KEY = 'ground-truth.plan.v2'; // v2: one route per element (key kept from the app's old name, so saved plans survive the rename)
 
 export function savePlan(problem: ProblemKey, plan: PlanState): void {
   try {
@@ -132,7 +132,7 @@ export function planReport(args: {
 }): string {
   const { plan, ref } = args;
   const out: string[] = [];
-  out.push(`GROUND TRUTH: ${args.title}`);
+  out.push(`VITAL GROUND: ${args.title}`);
   out.push(`Recorded ${args.when.toLocaleString('en-GB')}`);
   out.push('');
   for (const block of args.problemText) {

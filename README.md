@@ -1,4 +1,4 @@
-# Ground Truth — tactical problem generator
+# Vital Ground — tactical problem generator
 
 Phone web app that sets a tactical problem on the ground where you are standing. See the project brief for the full plan and `DECISIONS.md` for choices made so far.
 

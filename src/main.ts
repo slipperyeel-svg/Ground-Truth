@@ -1195,7 +1195,7 @@ $('btn-plan-export').addEventListener('click', async () => {
     when,
   });
   const stamp = when.toISOString().slice(0, 16).replace(/[-:T]/g, '');
-  const name = `ground-truth-plan-${stamp}.txt`;
+  const name = `vital-ground-plan-${stamp}.txt`;
   const file = new File([text], name, { type: 'text/plain' });
   // On a phone, offer the share sheet (mail, messages, files); otherwise download.
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };

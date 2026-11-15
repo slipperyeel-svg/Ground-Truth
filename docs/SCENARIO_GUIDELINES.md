@@ -59,7 +59,7 @@ problems"). Each sequel:
 - The summing-up accepts **more than one sound answer** and names the real differences: "On the whole, gentlemen have grasped in this instance the situation correctly. Differences, however, are apparent in…"
 - Criticises over-detail and failure to grasp the situation; values time, simplicity and concentration.
 
-## 6. Guidelines for Ground Truth scenarios
+## 6. Guidelines for Vital Ground scenarios
 
 **G1. Short.** The visible problem is about 150–300 words of plain prose, plus a small table of the user's force. No padding.
 

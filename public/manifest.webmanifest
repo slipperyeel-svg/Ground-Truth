@@ -1,6 +1,6 @@
 {
-  "name": "Ground Truth — tactical problems on the ground",
-  "short_name": "Ground Truth",
+  "name": "Vital Ground — tactical problems on the ground",
+  "short_name": "Vital Ground",
   "description": "Tactical problems set on the ground where you stand.",
   "start_url": "./",
   "scope": "./",
