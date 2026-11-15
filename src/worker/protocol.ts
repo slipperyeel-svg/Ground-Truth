@@ -148,7 +148,7 @@ export interface CompanyView {
   platoons?: { name: string; role: 'forward' | 'depth'; outline: Point[]; positions: { kind: PositionKind; label: string; point: Point; men: number }[] }[];
   hq?: { label: string; point: Point } | null;
   dummies?: { label: string; point: Point }[];
-  gaps?: { centre: Point; widthM: number; coveredFromDepth: number }[];
+  gaps?: { centre: Point; widthM: number; coveredFromDepth: number; coveredByAny: number }[];
   routes?: Point[][];
   maskWidth?: number;
   maskHeight?: number;

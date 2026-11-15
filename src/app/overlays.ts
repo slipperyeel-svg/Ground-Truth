@@ -221,7 +221,7 @@ export function companyGeoJSON(
   return { type: 'FeatureCollection' as const, features };
 }
 
-/** Company fire (orange), dead ground in front (blue) and mines (red stripes). */
+/** Company fire (orange; darker where two or more positions' arcs interlock), dead ground in front (blue) and mines (red stripes). */
 export function companyZonesImage(width: number, height: number, killZone: Uint8Array, deadGround: Uint8Array, mines: Uint8Array | null): string {
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let r = 0; r < height; r++)
@@ -229,7 +229,8 @@ export function companyZonesImage(width: number, height: number, killZone: Uint8
       const i = r * width + c;
       if (mines && mines[i] && (r + c) % 4 < 2) rgba.set([200, 0, 0, 200], i * 4);
       else if (deadGround[i]) rgba.set([40, 90, 220, 120], i * 4);
-      else if (killZone[i]) rgba.set([230, 90, 0, 80], i * 4);
+      else if (killZone[i] >= 2) rgba.set([200, 60, 0, 140], i * 4);
+      else if (killZone[i]) rgba.set([230, 90, 0, 70], i * 4);
     }
   return toDataURL(width, height, rgba);
 }

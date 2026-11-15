@@ -86,3 +86,16 @@ describe('dummy positions', () => {
     for (const d of L.dummies) expect(d.point.y).toBeGreaterThanOrEqual(front - 310);
   });
 });
+
+describe('mutual support and interlocking arcs', () => {
+  it('reports interlocking arcs and which positions support each other', () => {
+    const L = placeEnemyCompany({ grid: ground, layers: null, sides: ['S'], options: { mines: false, dummies: false, dispersed: false, droneConcealment: false, isrFires: false } })!;
+    expect(L.interlock).toBeGreaterThan(0.3);
+    expect(L.support.length).toBeGreaterThanOrEqual(6);
+    // Most positions should be supported by at least one other.
+    const supported = L.support.filter((s) => s.supportedBy.length > 0).length;
+    expect(supported / L.support.length).toBeGreaterThan(0.6);
+    expect(L.reasons.join(' ')).toMatch(/Interlocking arcs: \d+%/);
+    expect(L.reasons.join(' ')).toMatch(/Mutual support: \d+ of \d+/);
+  });
+});

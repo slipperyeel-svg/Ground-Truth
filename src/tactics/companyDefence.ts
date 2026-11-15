@@ -82,6 +82,14 @@ export const COMPANY = {
   /** Mines lie within this distance of an approach route. */
   mineRouteM: 120,
   routes: 3,
+  /** Mutual support: the ground within this distance of a position is "its" ground. */
+  supportRadiusM: 100,
+  /** Weight on mutual support when choosing positions (and between the forward platoons). */
+  supportWeight: 1.0,
+  /** A position counts as supported if another sees at least this share of the ground around it. */
+  supportedShare: 0.3,
+  /** Weight on the depth platoon seeing (covering by fire) the gap between the forward platoons. */
+  gapWeight: 2,
 };
 
 export type PositionKind = 'section' | 'team' | 'outpost' | 'hq' | 'dummy';
@@ -112,6 +120,8 @@ export interface Gap {
   widthM: number;
   /** Share of the gap the depth platoon can see (and cover by fire). */
   coveredFromDepth: number;
+  /** Share of the gap any fighting position can see (forward or depth). */
+  coveredByAny: number;
 }
 
 export interface CompanyLayout {
@@ -127,12 +137,16 @@ export interface CompanyLayout {
   maskWidth: number;
   maskHeight: number;
   maskCellM: number;
-  /** Ground covered by the company's fire (real positions only), in front of the forward line. */
-  killZone: Mask;
+  /** How many real positions cover each cell with fire (in front of each position); 2+ = interlocking. */
+  killZone: Uint8Array;
   /** Ground within 300 m in front of the forward positions that no position can see. */
   deadGround: Mask;
   /** Mined and obstructed ground, if the option is on. */
   mines: Mask | null;
+  /** Share of the ground under fire covered by two or more positions. */
+  interlock: number;
+  /** For each fighting position (label), the positions that can support it by fire. */
+  support: { label: string; supportedBy: string[] }[];
   reasons: string[];
   log: string[];
 }
@@ -218,13 +232,52 @@ function inArea(p: Point, centre: Point, u: Point, front: number, depth: number)
   return Math.abs(dx * v.x + dy * v.y) <= front / 2 && Math.abs(dx * u.x + dy * u.y) <= depth / 2;
 }
 
-/** Greedy best positions within an area, kept apart. */
-function bestIn(cands: Cand[], centre: Point, u: Point, n: number, spacing: number): Cand[] {
-  const inside = cands.filter((c) => inArea(c.p, centre, u, COMPANY.platoonFrontM, COMPANY.platoonDepthM)).sort((a, b) => b.total - a.total);
+/**
+ * How well position `a` supports position `b`: the share of the ground
+ * within 100 m of `b` that `a` can see (and so fire into). Uses `a`'s
+ * viewshed (gun range).
+ */
+function supports(cg: Grid, a: Cand, b: Cand): number {
+  const R = Math.ceil(COMPANY.supportRadiusM / cg.cellM);
+  const c = pointToCell(cg, b.p);
+  let total = 0, seen = 0;
+  for (let dr = -R; dr <= R; dr++)
+    for (let dc = -R; dc <= R; dc++) {
+      if (dr * dr + dc * dc > R * R) continue;
+      const r = c.row + dr, cc = c.col + dc;
+      if (r < 0 || cc < 0 || r >= cg.height || cc >= cg.width) continue;
+      total++;
+      seen += a.vs[r * cg.width + cc];
+    }
+  return total ? seen / total : 0;
+}
+
+/** Mutual support between a new position and those already chosen: the best two-way support with any of them. */
+function mutualWith(cg: Grid, c: Cand, chosen: Cand[]): number {
+  let best = 0;
+  for (const o of chosen) best = Math.max(best, (supports(cg, c, o) + supports(cg, o, c)) / 2);
+  return best;
+}
+
+/**
+ * Best positions within an area, kept apart, chosen one at a time: the first
+ * on its own merits, each later one also on how well it and the positions
+ * already chosen can fire into the ground around each other (PO: mutually
+ * supporting positions with interlocking arcs).
+ */
+function bestIn(cg: Grid, cands: Cand[], centre: Point, u: Point, n: number, spacing: number): Cand[] {
+  const inside = cands.filter((c) => inArea(c.p, centre, u, COMPANY.platoonFrontM, COMPANY.platoonDepthM));
   const out: Cand[] = [];
-  for (const c of inside) {
-    if (out.length >= n) break;
-    if (out.every((o) => distance(o.p, c.p) >= spacing)) out.push(c);
+  while (out.length < n) {
+    let best: Cand | null = null;
+    let bestV = -Infinity;
+    for (const c of inside) {
+      if (out.includes(c) || out.some((o) => distance(o.p, c.p) < spacing)) continue;
+      const v = c.total + (out.length ? COMPANY.supportWeight * mutualWith(cg, c, out) : 0);
+      if (v > bestV) [bestV, best] = [v, c];
+    }
+    if (!best) break;
+    out.push(best);
   }
   return out;
 }
@@ -297,7 +350,7 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
   });
   const value = new Map<Cand, { v: number; picks: Cand[] }>();
   for (const c of centres) {
-    const picks = bestIn(cands, c.p, u, n, spacing);
+    const picks = bestIn(cg, cands, c.p, u, n, spacing);
     value.set(c, { v: picks.reduce((a, b) => a + b.total, 0) * (picks.length >= Math.min(3, n) ? 1 : 0.5), picks });
   }
   let pair: [Cand, Cand] | null = null;
@@ -310,7 +363,10 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
       if (Math.abs(fwd(ctx, a.p) - fwd(ctx, b.p)) > C.forwardStaggerM) continue;
       const va = value.get(a)!, vb = value.get(b)!;
       if (va.picks.some((x) => vb.picks.includes(x))) continue;
-      const vv = va.v + vb.v;
+      // Bonus if the two forward platoons can support each other across the gap.
+      let cross = 0;
+      for (const x of va.picks) for (const y of vb.picks) cross = Math.max(cross, (supports(cg, x, y) + supports(cg, y, x)) / 2);
+      const vv = va.v + vb.v + COMPANY.supportWeight * cross;
       if (vv > pairV) [pairV, pair] = [vv, [a, b]];
     }
   if (!pair) return { log: `Advancing ${DIR(side)}: no two platoon areas fit the frontage.`, layout: null };
@@ -341,13 +397,26 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
   const midF = (fwd(ctx, pair[0].p) + fwd(ctx, pair[1].p)) / 2;
   const loL = Math.min(lat(pair[0].p), lat(pair[1].p)) - 100, hiL = Math.max(lat(pair[0].p), lat(pair[1].p)) + 100;
   const deadTotal = deadCells.length;
+  // The gap between the forward platoons: ground within 150 m of the midpoint
+  // of their two nearest positions. Doctrine covers a gap with fire from depth.
+  let ga = fwdPicks[0][0].p, gb = fwdPicks[1][0].p, gd = Infinity;
+  for (const x of fwdPicks[0]) for (const y of fwdPicks[1]) if (distance(x.p, y.p) < gd) [gd, ga, gb] = [distance(x.p, y.p), x.p, y.p];
+  const gapCentre = { x: (ga.x + gb.x) / 2, y: (ga.y + gb.y) / 2 };
+  const gapCells: number[] = [];
+  for (let i = 0; i < N; i++) if ((frames.X[i] - gapCentre.x) ** 2 + (frames.Y[i] - gapCentre.y) ** 2 <= 150 * 150) gapCells.push(i);
   const depthScore = (c: Cand) => {
     const vs = viewshed(cg, c.p, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: 1000, obstacles: ctx.obstacles });
-    let seen = 0;
+    let seen = 0, gapSeen = 0;
     for (const i of deadCells) seen += vs[i];
+    for (const i of gapCells) gapSeen += vs[i];
     const cc = pointToCell(cg, c.p);
     const exposure = ctx.attackerSees[cc.row * cg.width + cc.col] / ctx.nViewpoints;
-    return (deadTotal ? 2 * (seen / deadTotal) : 0) + 0.5 * c.total - 1.5 * exposure;
+    return (
+      (deadTotal ? 2 * (seen / deadTotal) : 0) +
+      (gapCells.length ? COMPANY.gapWeight * (gapSeen / gapCells.length) : 0) +
+      0.5 * c.total -
+      1.5 * exposure
+    );
   };
   const depthCands = cands.filter((c) => {
     const f = fwd(ctx, c.p) - midF;
@@ -481,13 +550,15 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   const seen300 = new Uint8Array(N);
   const spec = POSTURES.prepared;
   const r2 = spec.rifleRangeM ** 2;
-  for (const r of real) {
-    if (r.kind === 'outpost' || r.kind === 'hq') continue;
+  const fighting = real.filter((r) => r.kind !== 'outpost' && r.kind !== 'hq');
+  const views: Cand[] = [];
+  for (const r of fighting) {
     const vs = viewshed(cg, r.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: spec.gunRangeM, obstacles: ctx.obstacles });
+    views.push({ p: r.point, vs, total: 0, reverse: false });
     const fr = fwd(ctx, r.point);
     for (let i = 0; i < N; i++) {
       if (!vs[i] || F[i] > fr) continue;
-      killZone[i] = 1;
+      if (killZone[i] < 255) killZone[i]++;
       if ((X[i] - r.point.x) ** 2 + (Y[i] - r.point.y) ** 2 <= r2) seen300[i] = 1;
     }
   }
@@ -509,16 +580,18 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
     if (pa && pb) {
       const centre = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
       // Cells within 150 m of the gap centre, in front of the depth platoon.
-      let total = 0, covered = 0;
+      let total = 0, covered = 0, any = 0;
       const depthVs = platoons[2]
         ? platoons[2].positions.map((p) => viewshed(cg, p.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: 1000, obstacles: ctx.obstacles }))
         : [];
       for (let i = 0; i < N; i++) {
         if ((X[i] - centre.x) ** 2 + (Y[i] - centre.y) ** 2 > 150 * 150) continue;
         total++;
-        if (depthVs.some((vs) => vs[i])) covered++;
+        const fromDepth = depthVs.some((vs) => vs[i]);
+        if (fromDepth) covered++;
+        if (fromDepth || views.some((v) => v.vs[i])) any++;
       }
-      gaps.push({ centre, widthM: dMin, coveredFromDepth: total ? covered / total : 0 });
+      gaps.push({ centre, widthM: dMin, coveredFromDepth: total ? covered / total : 0, coveredByAny: total ? any / total : 0 });
     }
   }
 
@@ -551,6 +624,20 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
     }
   }
 
+  // Interlocking arcs: share of the ground under fire covered by two or more positions.
+  let under = 0, twoPlus = 0;
+  for (let i = 0; i < N; i++) {
+    if (!killZone[i]) continue;
+    under++;
+    if (killZone[i] >= 2) twoPlus++;
+  }
+  const interlock = under ? twoPlus / under : 0;
+  // Mutual support: which other positions can fire into the ground around each one.
+  const supportedBy = fighting.map((_, k) =>
+    fighting.filter((_, j) => j !== k && supports(cg, views[j], views[k]) >= COMPANY.supportedShare).map((o) => o.label),
+  );
+  const unsupported = fighting.filter((_, k) => supportedBy[k].length === 0).map((r) => r.label);
+
   // Reasons (for the DS), from the computed facts.
   const reasons: string[] = [];
   reasons.push(
@@ -565,9 +652,17 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
         `${p.positions.some((x) => x.kind === 'outpost') ? ', with an outpost on the crest' : ''}.`,
     );
   }
+  reasons.push(`Interlocking arcs: ${pct(interlock)} of the ground under the company's fire is covered by two or more positions.`);
+  reasons.push(
+    `Mutual support: ${fighting.length - unsupported.length} of ${fighting.length} positions can be supported by fire from at least one other ` +
+      `(it sees at least ${pct(COMPANY.supportedShare)} of the ground within ${COMPANY.supportRadiusM} m of them).` +
+      (unsupported.length ? ` Not supported: ${unsupported.join(', ')}.` : ''),
+  );
   if (gaps[0]) {
     reasons.push(
-      `Gap between 1 and 2 Pl: about ${Math.round(gaps[0].widthM)} m between their nearest positions; the depth platoon sees ${pct(gaps[0].coveredFromDepth)} of the ground within 150 m of its centre.`,
+      `Gap between 1 and 2 Pl: about ${Math.round(gaps[0].widthM)} m between their nearest positions. Of the ground within 150 m of its centre, ` +
+        `the depth platoon sees ${pct(gaps[0].coveredFromDepth)} and the company as a whole ${pct(gaps[0].coveredByAny)}.` +
+        (gaps[0].coveredByAny < 0.5 ? ' The gap is poorly covered by fire: a weakness in this defence.' : ''),
     );
   }
   if (L.deadTotal) {
@@ -599,6 +694,8 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
     killZone,
     deadGround,
     mines,
+    interlock,
+    support: fighting.map((r, k) => ({ label: r.label, supportedBy: supportedBy[k] })),
     reasons,
     log,
   };
