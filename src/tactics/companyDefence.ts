@@ -30,7 +30,7 @@ import {
   crestInFront,
   fwd,
   POSTURES,
-  routeFromStart,
+  routeTowards,
   score,
   SECTION_SCORING,
   standable,
@@ -134,6 +134,7 @@ export interface Gap {
 }
 
 export interface CompanyLayout {
+  /** Edge nearest the attacker's side (approximate when the advance is not N/E/S/W). */
   attackerSide: Side;
   advanceBearingDeg: number;
   /** The attacker's likely routes forward from the start. */
@@ -169,7 +170,10 @@ export interface CompanyInput {
   /** Seed for the generator's choices; omit for the most defensible layout and no random elements. */
   seed?: number;
   start?: Point;
+  /** Attacker sides to try (advance away from them): kept for tests. */
   sides?: Side[];
+  /** Advance bearings to try, degrees. Default: four at right angles, randomly turned (16 points). */
+  bearings?: number[];
   progress?: (message: string) => void;
 }
 
@@ -185,7 +189,13 @@ function rng(seed: number) {
   };
 }
 
-const DIR = (s: Side) => ({ N: 'north', E: 'east', S: 'south', W: 'west' })[OPPOSITE[s]];
+/** The 16 points of the compass, for an advance bearing. */
+export const COMPASS16 = [
+  'north', 'north-north-east', 'north-east', 'east-north-east', 'east', 'east-south-east', 'south-east', 'south-south-east',
+  'south', 'south-south-west', 'south-west', 'west-south-west', 'west', 'west-north-west', 'north-west', 'north-north-west',
+];
+export const compass16 = (bearingDeg: number) => COMPASS16[Math.round((((bearingDeg % 360) + 360) % 360) / 22.5) % 16];
+const DIR = (bearing: number) => compass16(bearing);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 interface Cand {
@@ -196,11 +206,11 @@ interface Cand {
 }
 
 /** Up to `routes` distinct routes forward: each new one avoids the ground near the last. */
-function approachRoutes(cg: Grid, going: Float32Array, start: Point, toSide: Side, n: number): Point[][] {
+function approachRoutes(cg: Grid, going: Float32Array, start: Point, bearingDeg: number, n: number): Point[][] {
   const g = new Float32Array(going);
   const out: Point[][] = [];
   for (let k = 0; k < n; k++) {
-    const r = routeFromStart(cg, g, start, toSide);
+    const r = routeTowards(cg, g, start, bearingDeg);
     if (!r) break;
     if (!out.some((o) => similar(o, r))) out.push(r);
     // Make the ground near this route three times dearer for the next.
@@ -310,17 +320,19 @@ function cellFrames(cg: Grid, start: Point, u: Point) {
 }
 
 /** Lay out one direction of advance. Returns null if no sensible defence fits. */
-function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrids>, side: Side, opts: CompanyOptions) {
+function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrids>, side: number, opts: CompanyOptions) {
+  // `side` is the advance bearing, degrees (any of 16 compass points).
   const { cg, layers } = base;
   const C = COMPANY;
   const start = input.start ?? { x: 0, y: 0 };
   const slopeDeg = slopeOf(cg);
   const going = layers ? layers.going : slopeOnlyGoing(slopeDeg);
-  const routes = approachRoutes(cg, going, start, OPPOSITE[side], C.routes);
+  const routes = approachRoutes(cg, going, start, side, C.routes);
   if (!routes.length) return { log: `Advancing ${DIR(side)}: no route forward.`, layout: null };
 
   const spec = { ...POSTURES.prepared, coverWeight: opts.droneConcealment ? 0.8 : POSTURES.prepared.coverWeight };
-  const ctx: Ctx = buildCtx(base, spec, side, start, routes, C.forwardMinM - 100, {
+  const ctx: Ctx = buildCtx(base, spec, nearestSide((side + 180) % 360), start, routes, C.forwardMinM - 100, {
+    advanceBearingDeg: side,
     minRouteCover: 0.1,
     openPenalty: opts.droneConcealment ? 0.5 : 0,
   });
@@ -461,6 +473,9 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
   return { log: '', layout: { routes, ctx, pair, fwdPicks, depthCentre, depthPicks, frontLine, value: pairV + Math.max(0, depthBest), cands, n, spacing, lat, fwdDead, deadTotal, frames } };
 }
 
+/** The box edge nearest a bearing. */
+const nearestSide = (bearingDeg: number): Side => (['N', 'E', 'S', 'W'] as Side[])[Math.round((((bearingDeg % 360) + 360) % 360) / 90) % 4];
+
 export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   const random = input.seed === undefined ? null : rng(input.seed);
   const chance = (k: OptionKey) => (random ? random() < OPTION_CHANCE[k] : false);
@@ -473,8 +488,12 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   };
   const base = analysisGrids(input, COMPANY.analysisCellM);
   const log: string[] = [];
-  let best: { side: Side; L: NonNullable<ReturnType<typeof layoutForSide>['layout']> } | null = null;
-  const sides = input.sides ?? (['S', 'W', 'N', 'E'] as Side[]);
+  let best: { side: number; L: NonNullable<ReturnType<typeof layoutForSide>['layout']> } | null = null;
+  // Advance bearings to try. Four at right angles, turned by 0, 22.5, 45 or
+  // 67.5 degrees (own random stream), so any of the 16 compass points can come
+  // up without trying all 16 (PO, 15 Nov 2026).
+  const turn = input.seed === undefined ? 0 : Math.floor(rng(input.seed ^ 0x16) () * 4) * 22.5;
+  const sides = input.bearings ?? (input.sides ? input.sides.map((s) => SIDE_BEARING[OPPOSITE[s]]) : [0, 90, 180, 270].map((b) => (b + turn) % 360));
   for (const [k, side] of sides.entries()) {
     input.progress?.(`Reading the ground for an enemy company: advance ${DIR(side)} (${k + 1} of ${sides.length})…`);
     const r = layoutForSide(input, base, side, options);
@@ -697,8 +716,8 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   if (options.isrFires) reasons.push('The enemy has drone surveillance over the approaches and indirect fire on call.');
 
   return {
-    attackerSide: side,
-    advanceBearingDeg: SIDE_BEARING[OPPOSITE[side]],
+    attackerSide: nearestSide((side + 180) % 360),
+    advanceBearingDeg: side,
     routes: L.routes,
     platoons,
     hq,

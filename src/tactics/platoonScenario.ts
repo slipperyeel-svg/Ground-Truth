@@ -10,6 +10,7 @@
  * trade-off: a covered route that saves exposure at the cost of time, or
  * mines on the obvious route.
  */
+import { compass16 } from './companyDefence';
 import { bearingVector, cellToPoint, distance, pointToCell, type Grid, type Point } from '../terrain/grid';
 import { localToLatLon } from '../terrain/elevation';
 import { viewshed, type Obstacles } from '../terrain/viewshed';
@@ -165,8 +166,8 @@ function rng(seed: number) {
   };
 }
 
-const DIRS = ['north', 'east', 'south', 'west'];
-const dirOf = (bearing: number) => DIRS[Math.round(bearing / 90) % 4];
+/** The direction of advance as one of the 16 compass points (PO, 15 Nov 2026). */
+const dirOf = (bearing: number) => compass16(bearing);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`);
 

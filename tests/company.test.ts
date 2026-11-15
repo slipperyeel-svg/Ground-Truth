@@ -99,3 +99,22 @@ describe('mutual support and interlocking arcs', () => {
     expect(L.reasons.join(' ')).toMatch(/Mutual support: \d+ of \d+/);
   });
 });
+
+describe('any of the 16 compass points', () => {
+  it('names the 16 points', async () => {
+    const { compass16 } = await import('../src/tactics/companyDefence');
+    expect(compass16(0)).toBe('north');
+    expect(compass16(22.5)).toBe('north-north-east');
+    expect(compass16(67.5)).toBe('east-north-east');
+    expect(compass16(337.5)).toBe('north-north-west');
+    expect(compass16(359)).toBe('north');
+  });
+  it('places a company across a diagonal advance', () => {
+    const L2 = placeEnemyCompany({ grid: ground, layers: null, bearings: [22.5], options: { mines: false, dummies: false, dispersed: false, droneConcealment: false, isrFires: false } });
+    expect(L2).not.toBeNull();
+    expect(L2!.advanceBearingDeg).toBe(22.5);
+    // Every forward position lies ahead along the advance.
+    for (const p of L2!.platoons.filter((q) => q.role === 'forward').flatMap((q) => q.positions)) expect(along(p.point, 22.5).f).toBeGreaterThan(300);
+    expect(L2!.reasons[0]).toMatch(/north-north-east/);
+  });
+});

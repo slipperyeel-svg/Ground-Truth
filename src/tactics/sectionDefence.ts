@@ -254,11 +254,12 @@ export function buildCtx(
   start: Point,
   routes: Point[][],
   viewpointsToM: number,
-  opts: { minRouteCover?: number; openPenalty?: number } = {},
+  opts: { minRouteCover?: number; openPenalty?: number; /** Any advance bearing (overrides the side's). */ advanceBearingDeg?: number } = {},
 ): Ctx {
   const { cg, obstacles, layers } = base;
   const S = SECTION_SCORING;
-  const u = bearingVector(SIDE_BEARING[OPPOSITE[attackerSide]]);
+  const advance = opts.advanceBearingDeg ?? SIDE_BEARING[OPPOSITE[attackerSide]];
+  const u = bearingVector(advance);
   const route: Point[] = [];
   const routeDir: Point[] = [];
   for (const r of routes) {
@@ -282,7 +283,7 @@ export function buildCtx(
     attackerSees: visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: spec.exposedM, maxRangeM: 1500, obstacles }),
     attackerSeesMan: visibilityCount(cg, vpObs, { obsHeightM: 2, targetHeightM: S.manHeightM, maxRangeM: 1500, obstacles }),
     nViewpoints: viewpoints.length,
-    attackerBearing: SIDE_BEARING[attackerSide],
+    attackerBearing: (advance + 180) % 360,
     minRouteCover: opts.minRouteCover ?? S.minRouteCover,
     openPenalty: opts.openPenalty ?? 0,
     viewpoints,
@@ -310,6 +311,32 @@ export function routeFromStart(g: Grid, going: Float32Array, start: Point, toSid
   let end = -1;
   let best = Infinity;
   for (const i of edgeCells(g, toSide)) if (cost[i] < best) [best, end] = [cost[i], i];
+  if (end < 0 || !Number.isFinite(best)) return null;
+  const cells: number[] = [];
+  for (let i = end; i >= 0; i = prev[i]) cells.push(i);
+  cells.reverse();
+  return cells.map((i) => cellToPoint(g, i % g.width, Math.floor(i / g.width)));
+}
+
+/**
+ * The easiest route from the start to the far edge of the box in the direction
+ * of a bearing: it may end on any box edge cell within ±halfAngle of it.
+ */
+export function routeTowards(g: Grid, going: Float32Array, start: Point, bearingDeg: number, halfAngleDeg = 30): Point[] | null {
+  const sc = pointToCell(g, start);
+  const s0 = sc.row * g.width + sc.col;
+  const { cost, prev } = costDistance(g, going, [s0]);
+  const ends: number[] = [];
+  for (const side of ['N', 'E', 'S', 'W'] as Side[])
+    for (const i of edgeCells(g, side)) {
+      const q = cellToPoint(g, i % g.width, Math.floor(i / g.width));
+      const b = ((Math.atan2(q.x - start.x, q.y - start.y) * 180) / Math.PI + 360) % 360;
+      const diff = Math.abs(((b - bearingDeg + 540) % 360) - 180);
+      if (diff <= halfAngleDeg) ends.push(i);
+    }
+  let end = -1;
+  let best = Infinity;
+  for (const i of ends) if (cost[i] < best) [best, end] = [cost[i], i];
   if (end < 0 || !Number.isFinite(best)) return null;
   const cells: number[] = [];
   for (let i = end; i >= 0; i = prev[i]) cells.push(i);
