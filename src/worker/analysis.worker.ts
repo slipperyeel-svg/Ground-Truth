@@ -3,6 +3,7 @@
  * the map stays responsive. The loaded ground is kept here, so later
  * requests (e.g. a viewshed from a tapped point) need no new download.
  */
+import { planFacts } from '../tactics/planFacts';
 import {
   classifyGround,
   countMask,
@@ -42,6 +43,8 @@ let obstacles: Obstacles | null = null;
 /** Measured height of hedges, trees and buildings (LIDAR DSM − DTM), when fine detail is loaded. */
 let lidarSurface: Float32Array | null = null;
 let featureNote = '';
+/** The enemy of the last scenario set, for facts about the user's plan. */
+let lastScenarioLayout: CompanyLayout | null = null;
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) => ctx.postMessage(msg, transfer);
 
@@ -305,8 +308,9 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         post({ type: 'scenario', id: req.id, result: { found: false, log: ['No sensible enemy defence fits ahead of you in any direction.'], featureNote, timeMs: Math.round(performance.now() - t0) } });
         return;
       }
+      lastScenarioLayout = L;
       progress('Writing the problem…');
-      const sc = writePlatoonScenario({ grid, layers, obstacles, layout: L, task: req.task, info: req.info, seed: req.seed });
+      const sc = writePlatoonScenario({ grid, layers, obstacles, layout: L, task: req.task, info: req.info, seed: req.seed, now: req.now ? new Date(req.now) : undefined });
       const keep = (_: unknown, k: number, a: unknown[]) => k % 3 === 0 || k === a.length - 1;
       const company = companyView(grid, L, performance.now() - t0);
       const view: ScenarioView = {
@@ -321,9 +325,18 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         company,
         timeMs: Math.round(performance.now() - t0),
       };
-      const transfer: Transferable[] = [L.killZone.buffer, L.deadGround.buffer];
-      if (L.mines) transfer.push(L.mines.buffer);
-      post({ type: 'scenario', id: req.id, result: view }, transfer);
+      // The masks are copied, not transferred: the worker keeps the layout for plan facts.
+      post({ type: 'scenario', id: req.id, result: view });
+    } else if (req.type === 'planFacts') {
+      if (!grid || !lastScenarioLayout) throw new Error('No problem set yet');
+      const g = grid;
+      const ref = (p: { x: number; y: number }) => {
+        const c = g.meta.centre;
+        if (!c) return `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+        const ll = localToLatLon(c, p.x, p.y);
+        return gridRef(ll.lat, ll.lon, 3).ref;
+      };
+      post({ type: 'planFacts', id: req.id, result: planFacts(g, obstacles, lastScenarioLayout, req.plan, ref) });
     } else if (req.type === 'company') {
       if (!grid) throw new Error('No ground loaded yet');
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });

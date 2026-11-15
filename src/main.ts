@@ -34,6 +34,7 @@ import {
 } from './app/overlays';
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addMineImages, ensureSymbol, type Echelon } from './app/symbols';
+import * as Plan from './app/plan';
 import { axisArrow, controlLine, minefield, objective as objectiveGraphic, taskGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
@@ -157,6 +158,7 @@ map.on('load', () => {
   map.addSource('scenario', { type: 'geojson', data: EMPTY });
   map.addSource('graphics', { type: 'geojson', data: EMPTY });
   map.addSource('units', { type: 'geojson', data: EMPTY });
+  map.addSource('plan', { type: 'geojson', data: EMPTY });
   map.addSource('section', { type: 'geojson', data: EMPTY });
   map.addSource('contours', {
     type: 'geojson',
@@ -367,6 +369,27 @@ map.on('load', () => {
   });
   // Unit symbols sit on top, so the selected point does not hide "You".
   map.moveLayer('units');
+  // The user's plan, on top of everything: a dashed blue route (planned, APP-6) and labelled positions.
+  map.addLayer({
+    id: 'plan-route', type: 'line', source: 'plan', filter: ['==', ['get', 'kind'], 'route'],
+    paint: { 'line-color': '#0a3fa8', 'line-width': 3.5, 'line-dasharray': [2, 1] },
+  });
+  map.addLayer({
+    id: 'plan-points', type: 'circle', source: 'plan', filter: ['==', ['get', 'kind'], 'vertex'],
+    paint: { 'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': '#0a3fa8', 'circle-stroke-width': 2 },
+  });
+  map.addLayer({
+    id: 'plan-marks', type: 'circle', source: 'plan', filter: ['==', ['get', 'kind'], 'mark'],
+    paint: { 'circle-radius': 8, 'circle-color': '#0a3fa8', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 },
+  });
+  map.addLayer({
+    id: 'plan-labels', type: 'symbol', source: 'plan', filter: ['==', ['get', 'kind'], 'mark'],
+    layout: {
+      'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-anchor': 'left', 'text-offset': [0.9, 0],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 13, 16, 18], 'text-allow-overlap': true,
+    },
+    paint: { 'text-color': '#0a3fa8', 'text-halo-color': '#fff', 'text-halo-width': 2.5 },
+  });
 
   // The free OS open map goes beneath all our own layers.
   void addOsOpenMap(map, 'hillshade')
@@ -531,9 +554,19 @@ $('btn-features').addEventListener('click', () => void toggleFeatures());
 
 // ---------- infantry platoon scenario ----------
 let scenario: ScenarioView | null = null;
+// ---------- the user's plan (PO, 15 Nov 2026) ----------
+let plan: Plan.PlanState = Plan.emptyPlan();
+let problemKey: Plan.ProblemKey | null = null;
+/** What a tap on the map does while a problem is open: add to the route, place a position, or (null) select a point. */
+let planTool: 'route' | 'mark' | null = null;
+let lastPlanFacts: Awaited<ReturnType<typeof engine.planFacts>> | null = null;
 
 function clearScenario() {
   scenario = null;
+  planTool = null;
+  plan = Plan.emptyPlan();
+  (map.getSource('plan') as GeoJSONSource | undefined)?.setData(EMPTY);
+  $('sc-plan-facts-block').hidden = true;
   phase2Shown = false;
   dsShown = false;
   (map.getSource('units') as GeoJSONSource | undefined)?.setData(EMPTY);
@@ -669,6 +702,8 @@ function showScenario() {
   $('sc-p2time').textContent = s.phase2.time;
   $('sc-p2msgs').replaceChildren(...s.phase2.messages.map((m) => el('li', `${m.time}, from ${m.from}: "${m.text}"`)));
   fillList('sc-p2q', s.phase2.questions);
+  answerBoxes('plan-answers', s.questions, plan.answers);
+  answerBoxes('plan-answers2', s.phase2.questions, plan.answers2);
   fillList('sc-ds-list', [...s.ds, `Data: ${s.dataNote}`]);
   $('sc-data').textContent = s.dataNote;
   $('sc').hidden = false;
@@ -693,9 +728,11 @@ function showScenarioDS(show: boolean) {
   (map.getSource('scenario') as GeoJSONSource).setData(show ? (scenarioGeoJSON(box.centre, v.scenario) as never) : EMPTY);
   dsShown = show;
   renderSituation();
+  renderPlan();
+  void showPlanFacts(show);
 }
 
-async function runScenario(seed: number) {
+async function runScenario(seed: number, resume?: Plan.SavedPlan) {
   if (!box) return;
   clearScenario();
   clearCompany();
@@ -704,14 +741,19 @@ async function runScenario(seed: number) {
   try {
     const task = ($('sel-task') as HTMLSelectElement).value as TaskType | '';
     const info = ($('sel-info') as HTMLSelectElement).value as InfoLevel | '';
-    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed }, status);
+    const now = resume?.problem.now ?? Date.now();
+    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
       status('No problem fits here');
       return;
     }
     $('sc-note').textContent = scenario.featureNote;
+    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now };
+    plan = resume ? resume.plan : Plan.emptyPlan();
     showScenario();
+    renderPlan();
+    if (!resume) Plan.savePlan(problemKey, plan);
     renderSituation();
     zoomToSituation();
     status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
@@ -731,6 +773,216 @@ $('btn-sc-develop').addEventListener('click', () => {
   $('sc-phase2').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden === true));
+
+const toLocal = (p: Plan.LatLon) => latLonToLocal(box!.centre, p.lat, p.lon);
+const ref8 = (p: Plan.LatLon) => gridRef(p.lat, p.lon, 4).ref;
+
+function savePlanNow() {
+  if (problemKey) Plan.savePlan(problemKey, plan);
+}
+
+/** Draw the plan on the map and list it in the panel; set the tool buttons. */
+function renderPlan() {
+  const features: object[] = [];
+  if (plan.route.length >= 2)
+    features.push({ type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: plan.route.map((p) => [p.lon, p.lat]) } });
+  for (const p of plan.route) features.push({ type: 'Feature', properties: { kind: 'vertex' }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
+  for (const m of plan.marks) features.push({ type: 'Feature', properties: { kind: 'mark', label: m.label }, geometry: { type: 'Point', coordinates: [m.lon, m.lat] } });
+  (map.getSource('plan') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features } as never);
+
+  const items: HTMLElement[] = [];
+  if (plan.route.length) items.push(el('li', `Route: ${plan.route.length} point${plan.route.length > 1 ? 's' : ''}, from ${ref8(plan.route[0])} to ${ref8(plan.route[plan.route.length - 1])}`));
+  plan.marks.forEach((m, i) => {
+    const li = el('li', `${m.label}: ${ref8(m)}`);
+    if (!dsShown) {
+      const del = el('button', 'Remove', 'del') as HTMLButtonElement;
+      del.addEventListener('click', () => {
+        Plan.removeMark(plan, i);
+        savePlanNow();
+        renderPlan();
+      });
+      li.append(del);
+    }
+    items.push(li);
+  });
+  $('plan-list').replaceChildren(...items);
+
+  const locked = dsShown;
+  for (const id of ['btn-plan-route', 'btn-plan-mark', 'btn-plan-here', 'btn-plan-undo']) ($(id) as HTMLButtonElement).disabled = locked;
+  ($('sel-mark') as HTMLSelectElement).disabled = locked;
+  for (const t of document.querySelectorAll<HTMLTextAreaElement>('#plan-answers textarea, #plan-answers2 textarea')) t.readOnly = locked;
+  $('btn-plan-route').classList.toggle('active', planTool === 'route');
+  $('btn-plan-mark').classList.toggle('active', planTool === 'mark');
+  $('btn-plan-route').textContent = planTool === 'route' ? 'Finish my route' : plan.route.length ? 'Add to my route' : 'Draw my route';
+  $('plan-mode').textContent = locked
+    ? 'Your plan is fixed while the ground truth is shown. Hide the ground truth to change it.'
+    : planTool === 'route'
+      ? 'Tap the map to add each point of your route, in order. Tap "Finish my route" when done.'
+      : planTool === 'mark'
+        ? `Tap the map where your ${($('sel-mark') as HTMLSelectElement).value} is to go.`
+        : '';
+}
+
+function addPlanPoint(p: Plan.LatLon) {
+  if (planTool === 'route') Plan.addRoutePoint(plan, p);
+  else if (planTool === 'mark') {
+    Plan.addMark(plan, ($('sel-mark') as HTMLSelectElement).value, p);
+    planTool = null; // one tap, one position
+  }
+  savePlanNow();
+  renderPlan();
+}
+
+/** Text boxes for answers, saved as they are typed. */
+function answerBoxes(id: string, questions: string[], answers: string[]) {
+  $(id).replaceChildren(
+    ...questions.map((q, i) => {
+      const label = el('label', `${i + 1}. ${q}`);
+      const t = document.createElement('textarea');
+      t.value = answers[i] ?? '';
+      t.addEventListener('input', () => {
+        answers[i] = t.value;
+        savePlanNow();
+      });
+      label.append(t);
+      return label;
+    }),
+  );
+}
+
+/** With the ground truth: computed facts about the user's own plan (facts only, no verdict). */
+async function showPlanFacts(show: boolean) {
+  lastPlanFacts = null;
+  $('sc-plan-facts-block').hidden = true;
+  if (!show || !box || (!plan.route.length && !plan.marks.length)) return;
+  try {
+    const f = await engine.planFacts({
+      route: plan.route.length >= 2 ? plan.route.map(toLocal) : [],
+      positions: plan.marks.map((m) => ({ kind: m.kind, label: m.label, point: toLocal(m) })),
+    });
+    lastPlanFacts = f;
+    const items: HTMLElement[] = [];
+    if (f.route.length) items.push(el('li', f.route.join(' ')));
+    for (const p of f.positions) {
+      const li = el('li', `${p.label}:`);
+      const ul = document.createElement('ul');
+      ul.append(...p.facts.map((t) => el('li', t)));
+      li.append(ul);
+      items.push(li);
+    }
+    $('sc-plan-facts').replaceChildren(...items);
+    $('sc-plan-facts-block').hidden = false;
+  } catch (err) {
+    status(`Could not work out facts for your plan: ${(err as Error).message}`);
+  }
+}
+
+$('btn-plan-route').addEventListener('click', () => {
+  planTool = planTool === 'route' ? null : 'route';
+  renderPlan();
+});
+$('btn-plan-mark').addEventListener('click', () => {
+  planTool = planTool === 'mark' ? null : 'mark';
+  renderPlan();
+});
+$('sel-mark').addEventListener('change', () => renderPlan());
+$('btn-plan-undo').addEventListener('click', () => {
+  Plan.undo(plan);
+  savePlanNow();
+  renderPlan();
+});
+$('btn-plan-here').addEventListener('click', async () => {
+  if (!box || !scenario?.scenario) return;
+  try {
+    await startWatching();
+  } catch (err) {
+    status((err as Error).message);
+    return;
+  }
+  if (!myFix) return;
+  const p = { lat: myFix.lat, lon: myFix.lon };
+  const q = toLocal(p);
+  if (Math.abs(q.x) > box.halfM || Math.abs(q.y) > box.halfM) {
+    status('You are outside the problem area');
+    return;
+  }
+  if (planTool === 'route') Plan.addRoutePoint(plan, p);
+  else Plan.addMark(plan, ($('sel-mark') as HTMLSelectElement).value, p);
+  savePlanNow();
+  renderPlan();
+  status(`Marked at ${ref8(p)} (±${Math.round(myFix.accuracy)} m)`);
+});
+
+/** The problem text, for the exported record. */
+function problemText(): { heading: string; lines: string[] }[] {
+  const s = scenario!.scenario!;
+  const out = [
+    { heading: 'You', lines: [s.you, ...s.force.map((f) => `${f.element}: ${f.detail}`)] },
+    { heading: 'Situation', lines: [s.situation] },
+    { heading: 'Friendly forces', lines: s.friendlyForces.map((f) => `${f.element}: ${f.detail}`) },
+    { heading: 'Your task', lines: [s.task_text] },
+    { heading: 'Enemy', lines: [...s.enemy.map((e) => `${e.text} (${e.source}; reliability ${e.reliability})`), `Not known: ${s.enemyGaps}`] },
+    { heading: 'Time and light', lines: [s.time] },
+    { heading: 'Ground', lines: s.ground },
+    { heading: 'Own troops', lines: [s.ownTroops] },
+    { heading: 'Weather', lines: [s.weather] },
+  ];
+  if (phase2Shown) out.push({ heading: 'The situation develops', lines: [s.phase2.time, ...s.phase2.messages.map((m) => `${m.time}, from ${m.from}: "${m.text}"`)] });
+  return out;
+}
+
+$('btn-plan-export').addEventListener('click', async () => {
+  const s = scenario?.scenario;
+  if (!s) return;
+  const when = new Date();
+  const text = Plan.planReport({
+    title: s.title,
+    problemText: problemText(),
+    questions: s.questions,
+    questions2: phase2Shown ? s.phase2.questions : null,
+    plan,
+    ref: ref8,
+    facts: dsShown ? lastPlanFacts : null,
+    when,
+  });
+  const stamp = when.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const name = `ground-truth-plan-${stamp}.txt`;
+  const file = new File([text], name, { type: 'text/plain' });
+  // On a phone, offer the share sheet (mail, messages, files); otherwise download.
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  if (nav.share && nav.canShare?.({ files: [file] })) {
+    try {
+      await nav.share({ files: [file], title: s.title });
+      return;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+});
+
+// Resume the last problem after a reload (same ground, enemy, task, times and plan).
+const savedPlan = Plan.loadSavedPlan();
+if (savedPlan) {
+  $('btn-resume').hidden = false;
+  $('btn-resume').title = `Saved ${new Date(savedPlan.savedAt).toLocaleString('en-GB')}`;
+}
+$('btn-resume').addEventListener('click', async () => {
+  const sp = Plan.loadSavedPlan();
+  if (!sp) return;
+  const k = sp.problem;
+  ($('sel-task') as HTMLSelectElement).value = k.task;
+  ($('sel-info') as HTMLSelectElement).value = k.info;
+  ($('sel-detail') as HTMLSelectElement).value = k.detail;
+  await loadGround(k.lat, k.lon, k.detail as Detail);
+  if (!box) return;
+  await runScenario(k.seed, sp);
+});
+
 
 // ---------- enemy company (DS view) ----------
 let company: CompanyView | null = null;
@@ -1057,7 +1309,8 @@ map.on('click', (e: MapMouseEvent) => {
   const { lat, lng } = e.lngLat;
   tapTimer = window.setTimeout(() => {
     tapTimer = undefined;
-    void selectPoint(lat, lng);
+    if (planTool && scenario?.scenario && !dsShown) addPlanPoint({ lat, lon: lng });
+    else void selectPoint(lat, lng);
   }, 300);
 });
 

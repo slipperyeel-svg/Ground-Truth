@@ -1,6 +1,7 @@
 /**
  * The page's handle on the analysis worker: each request returns a promise.
  */
+import type { PlanFacts, PlanInput } from '../tactics/planFacts';
 import type { Posture } from '../tactics/sectionDefence';
 import type { CompanyOptions } from '../tactics/companyDefence';
 import type { InfoLevel, TaskType } from '../tactics/platoonScenario';
@@ -31,6 +32,7 @@ export class Engine {
       else if (msg.type === 'loaded') p.resolve(msg.ground);
       else if (msg.type === 'viewshed') p.resolve(msg.result);
       else if (msg.type === 'problem') p.resolve(msg.result);
+      else if (msg.type === 'planFacts') p.resolve(msg.result);
       else if (msg.type === 'features') p.resolve(msg.result);
       else if (msg.type === 'height') p.resolve(msg.result);
       else if (msg.type === 'section') p.resolve(msg.result);
@@ -70,8 +72,12 @@ export class Engine {
   }
 
   /** Generate an enemy company and an infantry platoon scenario against it. */
+  planFacts(plan: PlanInput): Promise<PlanFacts> {
+    return this.request<PlanFacts>({ type: 'planFacts', plan });
+  }
+
   scenario(
-    req: { task?: TaskType; info?: InfoLevel; options: Partial<CompanyOptions>; seed: number },
+    req: { task?: TaskType; info?: InfoLevel; options: Partial<CompanyOptions>; seed: number; now?: number },
     onProgress?: (m: string) => void,
   ): Promise<ScenarioView> {
     return this.request<ScenarioView>({ type: 'scenario', ...req }, onProgress);

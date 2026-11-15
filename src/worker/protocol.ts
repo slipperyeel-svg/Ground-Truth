@@ -1,4 +1,5 @@
 /** Messages between the page and the analysis worker. */
+import type { PlanFacts, PlanInput } from '../tactics/planFacts';
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
@@ -74,6 +75,14 @@ export type WorkerRequest =
       info?: InfoLevel;
       options: Partial<CompanyOptions>;
       seed: number;
+      /** The time the problem is set for (ms since 1970), so a resumed problem reads the same. */
+      now?: number;
+    }
+  | {
+      /** Facts about the user's plan against the last scenario's enemy (local metres). */
+      type: 'planFacts';
+      id: number;
+      plan: PlanInput;
     }
   | {
       /** Ground height at a point (local metres), or null outside the loaded box. */
@@ -218,4 +227,5 @@ export type WorkerResponse =
   | { type: 'section'; id: number; result: SectionView }
   | { type: 'company'; id: number; result: CompanyView }
   | { type: 'scenario'; id: number; result: ScenarioView }
+  | { type: 'planFacts'; id: number; result: PlanFacts }
   | { type: 'error'; id: number; message: string };
