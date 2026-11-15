@@ -4,6 +4,7 @@
 import type { Posture } from '../tactics/sectionDefence';
 import type { CompanyOptions } from '../tactics/companyDefence';
 import type { InfoLevel, TaskType } from '../tactics/platoonScenario';
+import { BOX_M } from '../worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
 
 /** Omit that works across each member of a union. */
@@ -53,7 +54,7 @@ export class Engine {
     onProgress?: (m: string) => void,
   ): Promise<LoadedGround> {
     return this.request<LoadedGround>(
-      { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo, detail: opts.detail },
+      { type: 'load', lat, lon, sizeM: opts.sizeM ?? BOX_M, cellM: opts.cellM ?? 10, demo: opts.demo, detail: opts.detail },
       onProgress,
     );
   }

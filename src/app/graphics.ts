@@ -50,11 +50,34 @@ export function axisArrow(c: LL, from: Point, to: Point, side: 'friend' | 'hosti
   ];
 }
 
-/** Objective: a rounded outline labelled OBJ. */
-export function objective(c: LL, p: Point, r = 150): Feature[] {
+/** Objective: a rounded outline labelled OBJ (or its name). */
+export function objective(c: LL, p: Point, r = 150, name = 'OBJ'): Feature[] {
   const ring: Point[] = [];
   for (let k = 0; k < 36; k++) ring.push({ x: p.x + r * Math.cos((k * Math.PI) / 18), y: p.y + r * Math.sin((k * Math.PI) / 18) });
-  return [line(c, [...ring, ring[0]], { kind: 'obj', side: 'friend' }), label(c, add(p, { x: 0, y: r + 40 }), 'OBJ', { side: 'friend' })];
+  return [line(c, [...ring, ring[0]], { kind: 'obj', side: 'friend' }), label(c, add(p, { x: 0, y: r + 40 }), name, { side: 'friend' })];
+}
+
+/**
+ * Friendly control lines (APP-6): a boundary (solid line with the echelon
+ * mark, "I" for company, in the middle and the unit on each side) or a
+ * phase line / start line (labelled at both ends).
+ */
+export function controlLine(c: LL, kind: 'boundary' | 'phaseLine', path: Point[], text: string, sides?: [string, string]): Feature[] {
+  const a = path[0], b = path[path.length - 1];
+  const d = unit(a, b), n = perp(d);
+  const out: Feature[] = [line(c, path, { kind, side: 'friend' })];
+  if (kind === 'boundary') {
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    out.push(label(c, mid, text, { side: 'friend', big: true }));
+    // perp(d) points to the right of the line's direction (which runs forward); sides = [left, right].
+    if (sides) {
+      out.push(label(c, add(mid, n, -90), sides[0], { side: 'friend' }));
+      out.push(label(c, add(mid, n, 90), sides[1], { side: 'friend' }));
+    }
+  } else {
+    out.push(label(c, add(a, d, 120), text, { side: 'friend' }), label(c, add(b, d, -120), text, { side: 'friend' }));
+  }
+  return out;
 }
 
 /** Secure: an arrow curving round the objective, labelled S. */

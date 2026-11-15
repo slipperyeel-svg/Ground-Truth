@@ -11,7 +11,7 @@
  *
  * Both are requested in British National Grid at the analysis cell size,
  * thinned by the server (DECISIONS.md 87, 92): fine = 2 km box at 2 m,
- * medium = 4 km at 5 m (about 4 MB per layer each), problems = 4 km at 10 m
+ * medium = 8 km at 5 m, the default (about 17 MB per layer, fetched in four pieces), problems = 4 km at 10 m
  * (about 0.6 MB). They are then sampled onto the engine's local grid.
  */
 import { createGrid, type Grid } from './grid';
@@ -151,7 +151,26 @@ export async function loadLidar(
 ): Promise<LidarGround | null> {
   const f = opts.fetchImpl ?? fetch;
   const b = bngBoxFor(centre, sizeM, cellM);
-  const get = async (src: typeof LIDAR_DTM) => {
+  // The service will not reliably serve more than about 800 x 800 cells in one
+  // reply (an 8 km box at 5 m in one request hung for minutes; 4 km pieces
+  // come back in about 2 s). So larger boxes are fetched in pieces, side by
+  // side, and stitched together.
+  const MAX_PX = 800;
+  const pxE = Math.round((b.e1 - b.e0) / cellM), pxN = Math.round((b.n1 - b.n0) / cellM);
+  const kE = Math.ceil(pxE / MAX_PX), kN = Math.ceil(pxN / MAX_PX);
+  const pieces: { box: BngBox; col: number; row: number; w: number; h: number }[] = [];
+  for (let j = 0; j < kN; j++) {
+    for (let i = 0; i < kE; i++) {
+      const c0 = Math.round((pxE * i) / kE), c1 = Math.round((pxE * (i + 1)) / kE);
+      // Rows run from the north edge down.
+      const r0 = Math.round((pxN * j) / kN), r1 = Math.round((pxN * (j + 1)) / kN);
+      pieces.push({
+        box: { e0: b.e0 + c0 * cellM, e1: b.e0 + c1 * cellM, n0: b.n1 - r1 * cellM, n1: b.n1 - r0 * cellM },
+        col: c0, row: r0, w: c1 - c0, h: r1 - r0,
+      });
+    }
+  }
+  const getPiece = async (src: typeof LIDAR_DTM, box: BngBox): Promise<FloatRaster | null> => {
     // The service occasionally hangs without replying, while a retry answers
     // in about a second (normal replies take 1–3 s). So give each attempt
     // 15 s, and try up to three times.
@@ -160,7 +179,7 @@ export async function loadLidar(
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 15_000);
       try {
-        const res = await f(coverageUrl(src, b, cellM), { signal: ctl.signal });
+        const res = await f(coverageUrl(src, box, cellM), { signal: ctl.signal });
         if (!res.ok) return null; // e.g. outside the coverage
         const type = res.headers.get('content-type') ?? '';
         if (!type.includes('tiff')) return null;
@@ -173,7 +192,30 @@ export async function loadLidar(
     }
     return null;
   };
-  opts.onProgress?.('Fetching LIDAR ground and surface heights (Environment Agency)…');
+  /** Fetch all pieces of one layer and stitch them into one raster (NaN where a piece is missing). */
+  const get = async (src: typeof LIDAR_DTM): Promise<FloatRaster | null> => {
+    const parts = await Promise.all(pieces.map((p) => getPiece(src, p.box)));
+    if (parts.every((r) => !r)) return null;
+    if (pieces.length === 1) return parts[0];
+    const data = new Float32Array(pxE * pxN).fill(NaN);
+    parts.forEach((r, k) => {
+      if (!r) return;
+      const p = pieces[k];
+      for (let rr = 0; rr < p.h; rr++) {
+        const sr = Math.min(r.height - 1, Math.floor((rr * r.height) / p.h));
+        for (let cc = 0; cc < p.w; cc++) {
+          const sc = Math.min(r.width - 1, Math.floor((cc * r.width) / p.w));
+          const x = r.data[sr * r.width + sc];
+          const bad = (r.noData !== null && Math.abs(x - r.noData) < Math.abs(r.noData) * 1e-6) || x < -1000;
+          data[(p.row + rr) * pxE + p.col + cc] = bad ? NaN : x;
+        }
+      }
+    });
+    return { ...parts.find((r) => r)!, width: pxE, height: pxN, data, noData: null };
+  };
+  opts.onProgress?.(
+    `Fetching LIDAR ground and surface heights (Environment Agency)${pieces.length > 1 ? `, in ${pieces.length} pieces` : ''}…`,
+  );
   const [dtm, dsm] = await Promise.all([get(LIDAR_DTM), get(LIDAR_DSM)]);
   if (!dtm) return null;
 

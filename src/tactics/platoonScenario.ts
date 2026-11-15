@@ -66,6 +66,10 @@ export interface RouteFacts {
 export interface ScenarioMarkers {
   /** Friendly units, always shown. */
   friendly: { label: string; designation: string; higher: string; point: Point; echelon: 'platoon' | 'company'; hq?: boolean; own?: boolean }[];
+  /** Friendly control measures (2 up): company boundary, start line, phase line. */
+  control: { kind: 'boundary' | 'phaseLine'; path: Point[]; label: string; /** Boundary: units on its [left, right], looking forward. */ sides?: [string, string] }[];
+  /** The battlegroup objective. */
+  bgObjective: { point: Point; name: string; onMap: boolean };
   /** Effects arrows (axes of advance), always shown. */
   axes: { label: string; path: Point[]; own: boolean }[];
   /** The task graphic on the objective. */
@@ -76,6 +80,21 @@ export interface ScenarioMarkers {
   minefields: { phase: 1 | 2; outline: Point[]; label: string }[];
 }
 
+export type BgType = 'light' | 'mechanised';
+
+/**
+ * Made-up British-style battalions (none is a real regiment), so the problems
+ * read naturally without implying any real unit.
+ */
+export const BATTALIONS = [
+  { short: '1 WESSEX', full: '1st Battalion, The Wessex Regiment' },
+  { short: '2 PENNINE', full: '2nd Battalion, The Pennine Rifles' },
+  { short: '1 MARCHES', full: '1st Battalion, The Marches Regiment' },
+  { short: '3 FENLAND', full: '3rd Battalion, The Fenland Light Infantry' },
+];
+const OBJ_NAMES = ['HAWK', 'FALCON', 'KESTREL', 'MERLIN', 'HARRIER', 'OSPREY'];
+const PL_NAMES = ['OAK', 'ASH', 'ELM', 'BIRCH', 'ROWAN', 'HAZEL'];
+
 export interface PlatoonScenario {
   task: TaskType;
   info: InfoLevel;
@@ -85,6 +104,10 @@ export interface PlatoonScenario {
   force: { element: string; detail: string }[];
   /** Higher intent and your task (G4). */
   situation: string;
+  /** Battlegroup type for this problem (varies). */
+  bgType: BgType;
+  /** Friendly forces 2 up and 1 up, and flanks (PO, 15 Nov 2026). */
+  friendlyForces: { element: string; detail: string }[];
   task_text: string;
   /** Enemy information, each with source and reliability (G5). */
   enemy: EnemyReport[];
@@ -325,12 +348,28 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
 
   // ---- Who you are, your force, situation and task (G2–G4) -------------------
   const leftRight = (p: Point) => (lat(p) >= 0 ? 'right' : 'left');
-  const you = 'You command 2 Platoon, B Company. Your company commander is with Company HQ.';
-  const force = [
-    { element: '3 sections', detail: '8 men each: two fire teams, one general-purpose machine gun' },
-    { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
-    { element: 'Fire support', detail: 'battlegroup mortars on call through your company commander' },
-  ];
+  // 2 up: battlegroup name and type (own random stream, so the other choices for a seed are unchanged).
+  const r2 = rng(input.seed ^ 0x5eed2);
+  const pick2 = <T>(xs: T[]) => xs[Math.floor(r2() * xs.length)];
+  const bgType: BgType = r2() < 0.5 ? 'light' : 'mechanised';
+  const bn = pick2(BATTALIONS);
+  const neighbour = pick2(BATTALIONS.filter((b) => b !== bn));
+  const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
+  const plName = `PL ${pick2(PL_NAMES)}`;
+  const bg = `${bn.short} BG`;
+  const you = `You command 2 Platoon, B Company, ${bn.full}${bgType === 'mechanised' ? ' (mechanised, in Boxer)' : ''}. Your company commander is with Company HQ.`;
+  const force = bgType === 'light'
+    ? [
+        { element: '3 sections', detail: '8 men each: two fire teams, one general-purpose machine gun' },
+        { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
+        { element: 'Fire support', detail: 'battlegroup mortars on call through your company commander' },
+      ]
+    : [
+        { element: '3 sections', detail: '8 men each, carried in a Boxer: two fire teams, one general-purpose machine gun' },
+        { element: 'Vehicles', detail: '4 Boxer (one per section, one for platoon HQ), each with a remote weapon station (heavy or grenade machine gun). They can give fire support wherever they can see the enemy and survive.' },
+        { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
+        { element: 'Fire support', detail: 'battlegroup mortars on call through your company commander' },
+      ];
   const along = (() => {
     if (!lay) return '';
     let road = 0, track = 0;
@@ -343,7 +382,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     return road / main.length > 0.4 ? ' along the road' : (road + track) / main.length > 0.4 ? ' along the track' : '';
   })();
   const situation =
-    `The battlegroup is advancing ${dir}${along} from ${ref(start)}. Enemy are believed to be defending the ground ahead to block that advance. ` +
+    `${bg} is advancing ${dir}${along} from ${ref(start)}. Enemy are believed to be defending the ground ahead to block that advance. ` +
     `B Company leads.`;
   const taskText = {
     secure: `Secure ${objective.name} by ${hhmm(byT, tz)}, in order to allow the battlegroup to pass ${dir}.`,
@@ -546,6 +585,71 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     label: { secure: 'S', neutralise: 'N', findFix: 'F', screen: 'S' }[task],
   };
 
+  // ---- Friendly forces 2 up and 1 up (PO, 15 Nov 2026) --------------------------
+  // A Coy is beyond 1 Pl; the other flank (towards the second enemy forward
+  // platoon) is the battlegroup's open flank. C Coy is the battlegroup reserve.
+  const onePlSideWord = onePlSide > 0 ? 'right' : 'left';
+  const openSideWord = onePlSide > 0 ? 'left' : 'right';
+  const bgObjFwd = Math.max(fwd(objective.point), depthPl ? fwd(depthPl.centre) : frontLine + 500) + 600;
+  // On the main route if it reaches that far, otherwise straight on along the advance.
+  const bgObjQ = main.find((p) => fwd(p) >= bgObjFwd) ?? { x: u.x * bgObjFwd, y: u.y * bgObjFwd };
+  const bgObjOnMap = Math.abs(bgObjQ.x) <= half && Math.abs(bgObjQ.y) <= half && distance(bgObjQ, objective.point) > 450;
+  const bgObjective = { point: bgObjQ, name: bgObjName, onMap: bgObjOnMap };
+  const aCoy = clampBox({ x: start.x + v.x * onePlSide * 1300, y: start.y + v.y * onePlSide * 1300 });
+  const cCoy = clampBox(behind(1400, -onePlSide * 150));
+  friendly.push(
+    { label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company' },
+    { label: 'C Coy', designation: 'C', higher: '', point: cCoy, echelon: 'company' },
+  );
+  axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
+  const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
+  const along2 = (l: number, f0: number, f1: number): Point[] => [f0, f1].map((f) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
+  const boundaryLat = onePlSide * 900;
+  const control: ScenarioMarkers['control'] = [
+    // B Coy / A Coy boundary; sides are [left, right] looking forward: B on our side, A on theirs.
+    { kind: 'boundary', path: along2(boundaryLat, -1200, bgObjFwd + 300), label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },
+    { kind: 'phaseLine', path: across(150, -1600, 1600), label: 'SL' },
+    { kind: 'phaseLine', path: across(Math.min(900, Math.max(400, frontLine - 300)), -1600, 1600), label: plName },
+  ];
+  const coyMission = {
+    secure: `B Coy is to break through the enemy's forward line on the main route and secure ${objective.name}, in order to let ${bg} pass ${dir} to ${bgObjName}.`,
+    neutralise: `B Coy is to destroy the enemy on the main route ${dir}, in order to open the way for ${bg} to ${bgObjName}.`,
+    findFix: `B Coy is to find and destroy the enemy's forward positions across the company's front, in order to open the way for ${bg} to ${bgObjName}.`,
+    screen: `B Coy is to break through the enemy's forward line on the main route, in order to open the way for ${bg} to ${bgObjName}.`,
+  }[task];
+  const coyScheme = {
+    secure: `2 Pl (main effort) secures ${objective.name}. 1 Pl advances on the ${onePlSideWord} and fixes the enemy there, so they cannot turn on 2 Pl. 3 Pl is the company reserve, ready to reinforce 2 Pl or to face the open ${openSideWord} flank.`,
+    neutralise: `2 Pl (main effort) neutralises the enemy on the main route. 1 Pl advances on the ${onePlSideWord} and fixes the enemy there. 3 Pl, in reserve, then passes through to exploit ${dir}.`,
+    findFix: `2 Pl finds the enemy's forward positions and fixes them. 3 Pl (main effort) then attacks them in the flank. 1 Pl advances on the ${onePlSideWord} and keeps the enemy there busy.`,
+    screen: `1 Pl (main effort) attacks along the main route, with 3 Pl following to pass through. 2 Pl screens the company's open ${openSideWord} flank.`,
+  }[task];
+  const friendlyForces = [
+    {
+      element: `2 up: ${bg}`,
+      detail:
+        (bgType === 'light'
+          ? `Light role infantry: three rifle companies on foot, with mortars, anti-tank and reconnaissance platoons. `
+          : `Mechanised infantry in Boxer, with a squadron of Challenger 3 tanks, mortars and engineers. `) +
+        `Mission: ${bg} is to seize ${bgObjName} (${ref(bgObjective.point)}${bgObjOnMap ? '' : `, about ${km(bgObjFwd)} ${dir} of the start line, beyond this map`}), in order to allow the brigade to pass ${dir}. ` +
+        `CO's intent: break the enemy's forward line quickly on the main route, before they can reinforce or bring artillery onto us; ` +
+        `main effort B Coy; A Coy advances on B Coy's ${onePlSideWord} to fix the enemy there; C Coy, the battlegroup reserve, then passes through to ${bgObjName}. ` +
+        `End state: the enemy ahead destroyed or withdrawn, the route ${dir} open, and ${bg} firm on ${bgObjName}.`,
+    },
+    {
+      element: '1 up: B Coy',
+      detail:
+        `Mission: ${coyMission} OC's intent: move fast and use the ground; do not fight the enemy where he expects us. ${coyScheme} ` +
+        `Start line ${ref(start)}; report crossing ${plName}.`,
+    },
+    {
+      element: 'Flanks',
+      detail:
+        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about 1.3 km away beyond 1 Pl, boundary marked on the map. ` +
+        `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: open; ${neighbour.short} BG is about 5 km away, out of contact. ` +
+        `Rear: C Coy (battlegroup reserve) at ${ref(cCoy)}.`,
+    },
+  ];
+
   const phase2 = {
     time: `${hhmm(t2, tz)}. Your platoon has moved off as you planned.`,
     messages,
@@ -585,12 +689,12 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
 
   return {
     task, info,
-    title: `${TASK_LABEL[task]}: 2 Platoon, advancing ${dir}`,
-    you, force, situation, task_text, enemy, enemyGaps, time, ground, ownTroops, weather, questions,
+    title: `${TASK_LABEL[task]}: 2 Platoon, B Company, ${bn.short}, advancing ${dir}`,
+    you, force, situation, bgType, friendlyForces, task_text, enemy, enemyGaps, time, ground, ownTroops, weather, questions,
     timeAllowed: '30 minutes for your plan; 10 minutes when the situation develops.',
     phase2, ds,
     objective: objective.point,
-    markers: { friendly, axes, task: taskMarker, sightings, minefields },
+    markers: { friendly, control, bgObjective, axes, task: taskMarker, sightings, minefields },
     direct: chosen.direct, covered: chosen.covered,
     gate: `${chosen.ok ? 'Passed' : 'Weak'}: ${chosen.why}`,
     dataNote,

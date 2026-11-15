@@ -34,10 +34,11 @@ import {
 } from './app/overlays';
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addMineImages, ensureSymbol, type Echelon } from './app/symbols';
-import { axisArrow, minefield, taskGraphic } from './app/graphics';
+import { axisArrow, controlLine, minefield, objective as objectiveGraphic, taskGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
+import { BOX_M } from './worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
 import type { CompanyOptions } from './tactics/companyDefence';
 import type { InfoLevel, TaskType } from './tactics/platoonScenario';
@@ -564,6 +565,24 @@ function unitFeature(p: P, spec: Parameters<typeof ensureSymbol>[1], text: { des
  * seen, as suspected (dashed frames), adding what "the situation develops"
  * reveals once opened; with the DS reveal, the whole enemy layout in red.
  */
+/**
+ * Zoom the map to the problem area (your company, the reported enemy and the
+ * objectives), so the symbols can be read; the whole 8 km box is a zoom-out away.
+ */
+function zoomToSituation() {
+  const s = scenario?.scenario;
+  if (!box || !s) return;
+  const m = s.markers;
+  const pts: P[] = [
+    ...m.friendly.filter((f) => f.echelon === 'platoon' || f.hq).map((f) => f.point),
+    ...m.sightings.filter((x) => x.phase === 1).map((x) => x.point),
+    m.task.objective,
+  ];
+  const ll = pts.map((p) => localToLatLon(box!.centre, p.x, p.y));
+  const lons = ll.map((q) => q.lon), lats = ll.map((q) => q.lat);
+  map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 50, animate: false, maxZoom: 15 });
+}
+
 function renderSituation() {
   const s = scenario?.scenario;
   if (!box || !s) {
@@ -579,6 +598,8 @@ function renderSituation() {
     units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
   }
   for (const a of m.axes) graphics.push(...axisArrow(c, a.path[0], a.path[a.path.length - 1], 'friend', a.label));
+  for (const l of m.control) graphics.push(...controlLine(c, l.kind, l.path, l.label, l.sides));
+  if (m.bgObjective.onMap) graphics.push(...objectiveGraphic(c, m.bgObjective.point, 250, m.bgObjective.name));
   graphics.push(...taskGraphic(c, m.task));
 
   if (dsShown && scenario?.company?.platoons) {
@@ -627,6 +648,11 @@ function showScenario() {
     return tr;
   }));
   $('sc-situation').textContent = s.situation;
+  $('sc-friendly').replaceChildren(...s.friendlyForces.map((f) => {
+    const tr = document.createElement('tr');
+    tr.append(el('td', f.element), el('td', f.detail));
+    return tr;
+  }));
   $('sc-task').textContent = s.task_text;
   $('sc-enemy').replaceChildren(...s.enemy.map((e) => {
     const li = el('li', e.text + ' ');
@@ -687,6 +713,7 @@ async function runScenario(seed: number) {
     $('sc-note').textContent = scenario.featureNote;
     showScenario();
     renderSituation();
+    zoomToSituation();
     status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
     $('scenario-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -736,7 +763,7 @@ function companyOptions(): Partial<CompanyOptions> {
   return { mines: on('co-mines'), dummies: on('co-dummies'), dispersed: on('co-dispersed'), droneConcealment: on('co-drone'), isrFires: on('co-isr') };
 }
 
-const groundFitsCompany = () => !!ground && ground.width * ground.cellM === 4000;
+const groundFitsCompany = () => !!ground && ground.width * ground.cellM === BOX_M;
 
 async function runCompany(seed: number) {
   if (!box) return;
@@ -770,7 +797,7 @@ $('btn-pt-company').addEventListener('click', async () => {
   if (!selected) return;
   if (!boxCentredOn(selected) || !groundFitsCompany()) {
     const p = selected;
-    // A company needs the 4 km box: Medium LIDAR (5 m) in England, else standard.
+    // A company needs the standard 8 km box: LIDAR 5 m in England, else standard data.
     await loadGround(p.lat, p.lon, 'medium');
     if (!boxCentredOn(p)) return;
     await selectPoint(p.lat, p.lon);
@@ -1099,7 +1126,7 @@ function boxCentredOn(p: { lat: number; lon: number }): boolean {
   return Math.hypot(d.x, d.y) < 50;
 }
 
-/** Load the 4 km box centred on the selected point, keeping the selection. */
+/** Load the standard box centred on the selected point, keeping the selection. */
 async function loadAtSelected(): Promise<boolean> {
   if (!selected) {
     status('First select a point: tap the map, or use the ⌖ crosshair');

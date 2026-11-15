@@ -11,10 +11,13 @@ import type { ContourLine } from '../terrain/contours';
 export type DemoTerrain = 'ridge' | 'cone' | 'valley' | 'flat';
 export type Detail = 'fine' | 'medium' | 'problem' | 'standard';
 
+/** The standard box: 8 km square (PO, 15 Nov 2026; was 4 km). */
+export const BOX_M = 8000;
+
 /** Box size and cell size for each LIDAR detail level. */
 export const LIDAR_DETAIL: Record<Exclude<Detail, 'standard'>, { sizeM: number; cellM: number; label: string }> = {
   fine: { sizeM: 2000, cellM: 2, label: 'fine (LIDAR 2 m)' },
-  medium: { sizeM: 4000, cellM: 5, label: 'medium (LIDAR 5 m)' },
+  medium: { sizeM: BOX_M, cellM: 5, label: 'LIDAR 5 m' },
   problem: { sizeM: 4000, cellM: 10, label: 'LIDAR 10 m' },
 };
 
@@ -30,7 +33,7 @@ export type WorkerRequest =
       demo?: DemoTerrain;
       /**
        * Environment Agency LIDAR where it exists (England), else falls back to standard:
-       * 'fine' 2 km box at 2 m; 'medium' 4 km at 5 m; 'problem' 4 km at 10 m (what the
+       * 'fine' 2 km box at 2 m; 'medium' 8 km at 5 m (the default); 'problem' 4 km at 10 m (what the
        * problem engine is built for). 'standard': ~30 m data, sizeM/cellM as given.
        */
       detail?: Detail;
