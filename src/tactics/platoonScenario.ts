@@ -87,13 +87,18 @@ export type BgType = 'light' | 'mechanised';
 /**
  * Units (PO, 15 Nov 2026). The user's own units are fictional: 1st Battalion,
  * The Sandhurst Rifles; The Camberley Yeomanry (for armoured or recce problems
- * later); and The Barossa Regiment, Royal Artillery (BAR RA), the battlegroup's
- * fire support and the user's unit for artillery problems. Every other unit (flanking battlegroups, tanks, recce) is a
+ * later); and 172 Field Regiment, RA (155 (Sidi Nsir), 156 and 157 Batteries),
+ * the battlegroup's fire support and the user's unit for artillery problems. Every other unit (flanking battlegroups, tanks, recce) is a
  * real British Army regiment, from the PO's lists.
  */
 export const OWN_BATTALION = { short: '1 SR', full: '1st Battalion, The Sandhurst Rifles' };
 export const OWN_CAVALRY = { short: 'CY', full: 'The Camberley Yeomanry' };
-export const OWN_ARTILLERY = { short: 'BAR RA', full: 'The Barossa Regiment, Royal Artillery' };
+/** The user's artillery (PO, 15 Nov 2026): 172 Field Regiment, RA, with its three batteries. */
+export const OWN_ARTILLERY = {
+  short: '172 Fd Regt RA',
+  full: '172 Field Regiment, RA',
+  batteries: ['155 (Sidi Nsir) Battery', '156 Battery', '157 Battery'],
+};
 /** Real infantry regiments: name and abbreviation (RRF units write FUSILIERS). */
 export const INFANTRY: { name: string; abbr: string }[] = [
   { name: 'Grenadier Guards', abbr: 'GREN GDS' },
@@ -423,6 +428,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const nb = pick2(INFANTRY);
   const neighbour = { short: `1 ${nb.abbr}`, full: `1st Battalion, ${nb.name}` };
   const tankRegt = pick2(CAVALRY.filter((c) => c.tanks));
+  const battery = pick2(OWN_ARTILLERY.batteries);
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
   const plName = `PL ${pick2(PL_NAMES)}`;
   // Your own objective gets a codename too (PO, 15 Nov 2026): "OBJ KESTREL (the track junction area at …)".
@@ -436,13 +442,13 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     ? [
         { element: '3 sections', detail: '8 men each: two fire teams, one general-purpose machine gun' },
         { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
-        { element: 'Fire support', detail: `battlegroup mortars, and a battery of ${OWN_ARTILLERY.full} (${OWN_ARTILLERY.short}) in support of the battlegroup, on call through your company commander` },
+        { element: 'Fire support', detail: `battlegroup mortars, and ${battery} of ${OWN_ARTILLERY.full} in support of the battlegroup, on call through your company commander` },
       ]
     : [
         { element: '3 sections', detail: '8 men each, carried in a Boxer: two fire teams, one general-purpose machine gun' },
         { element: 'Vehicles', detail: '4 Boxer (one per section, one for platoon HQ), each with a remote weapon station (heavy or grenade machine gun). They can give fire support wherever they can see the enemy and survive.' },
         { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
-        { element: 'Fire support', detail: `battlegroup mortars, and a battery of ${OWN_ARTILLERY.full} (${OWN_ARTILLERY.short}) in support of the battlegroup, on call through your company commander` },
+        { element: 'Fire support', detail: `battlegroup mortars, and ${battery} of ${OWN_ARTILLERY.full} in support of the battlegroup, on call through your company commander` },
       ];
   const along = (() => {
     if (!lay) return '';
