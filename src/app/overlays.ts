@@ -162,13 +162,13 @@ export function dsGeoJSON(
 /** Enemy fire teams, other possible positions and the attacker's route. */
 export function sectionGeoJSON(
   centre: LL,
-  ds: { teams: { label: string; point: { x: number; y: number }; gun: boolean }[]; alternatives: { x: number; y: number }[]; route: { x: number; y: number }[] },
+  ds: { teams: { label: string; point: { x: number; y: number }; gun: boolean; outpost?: boolean }[]; alternatives: { x: number; y: number }[]; route: { x: number; y: number }[] },
 ) {
   const features: object[] = [
     { type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: ds.route.map((p) => ll(centre, p)) } },
   ];
   for (const t of ds.teams) {
-    features.push({ type: 'Feature', properties: { kind: t.gun ? 'gun' : 'team', label: t.label }, geometry: { type: 'Point', coordinates: ll(centre, t.point) } });
+    features.push({ type: 'Feature', properties: { kind: t.outpost ? 'outpost' : t.gun ? 'gun' : 'team', label: t.label }, geometry: { type: 'Point', coordinates: ll(centre, t.point) } });
   }
   ds.alternatives.forEach((p, k) =>
     features.push({ type: 'Feature', properties: { kind: 'alt', label: `Alt ${k + 1}` }, geometry: { type: 'Point', coordinates: ll(centre, p) } }),

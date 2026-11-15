@@ -11,7 +11,9 @@
  *      - dead ground in front within rifle range (less is better);
  *      - concealment from where the attacker will be looking from;
  *      - not skylined;
- *      - enfilade: seeing the route obliquely, so fire runs along it;
+ *      - fire into the attacker's flank or rear rather than head-on (PO, DECISIONS.md 105);
+ *      - a reverse-slope position catching the attacker as they come over a
+ *        crest, with an outpost forward (PO, DECISIONS.md 106);
  *      - nearby cover (hedge, wall, wood edge);
  *      - a covered route to the rear.
  *    The best few are refined at 10 m.
@@ -23,7 +25,7 @@
  * Everything is computed from the ground, features and line of sight. The
  * weights and thresholds are first guesses for the PO to tune.
  */
-import { bearingVector, cellToPoint, distance, pointToCell, type Grid, type Mask, type Point } from '../terrain/grid';
+import { bearingVector, cellToPoint, distance, elevationAtPoint, pointToCell, type Grid, type Mask, type Point } from '../terrain/grid';
 import { viewshed, visibilityCount, type Obstacles } from '../terrain/viewshed';
 import { isSilhouetted } from '../terrain/crest';
 import { slope as slopeOf } from '../terrain/slope';
@@ -91,9 +93,21 @@ export const SECTION_SCORING = {
   minRouteCover: 0.3,
   /** Fire teams this far apart, across the line of advance. */
   teamSpacingM: 40,
-  /** "Fire along the route" if within this angle of it. */
-  enfiladeDeg: 30,
-  weights: { fields: 2, route: 1.5, dead: 1.5, exposure: 1.5, enfilade: 0.5, rear: 0.3, skyline: 0.5 },
+  /**
+   * Fire counts as flank or rear if the line of fire is at least this far
+   * off head-on (the attacker walking straight at the gun).
+   */
+  flankMinDeg: 60,
+  /** Reverse slope: a crest this far in front (between the position and the attacker). */
+  crestMinM: 50,
+  crestMaxM: 300,
+  /** The crest must stand at least this far above the position, and fall at least this far beyond. */
+  crestRiseM: 2,
+  crestFallM: 3,
+  /** Outpost: 2 men, prone, on or near the forward slope at the crest. */
+  outpostEyeM: 0.6,
+  outpostRangeM: 1000,
+  weights: { fields: 2, route: 1.5, dead: 1.5, exposure: 1.5, flank: 1.0, reverse: 0.6, rear: 0.3, skyline: 0.5 },
 };
 
 export type Intel = 'exact' | 'area' | 'direction';
@@ -107,8 +121,12 @@ export interface SectionScores {
   deadGround: number;
   /** Share of the attacker's viewpoints that can see the position. */
   exposure: number;
-  /** Share of the route the section sees that it sees along its length (enfilade). */
-  enfilade: number;
+  /** Share of the route the section sees where its fire strikes the attacker's flank or rear, not head-on. */
+  flankFire: number;
+  /** True if the position is behind a crest (50–300 m in front) and hidden from the attacker. */
+  reverseSlope: boolean;
+  /** Distance to that crest, if any. */
+  crestM: number | null;
   nearCover: boolean;
   /** Share of the ground 50–150 m behind that the attacker cannot see. */
   coveredRear: number;
@@ -120,6 +138,8 @@ export interface FireTeam {
   label: string;
   point: Point;
   gun: boolean;
+  /** An outpost forward of a reverse-slope position (2 men, observing). */
+  outpost?: boolean;
 }
 
 export interface SectionLayout {
@@ -243,6 +263,31 @@ function routeFromStart(g: Grid, going: Float32Array, start: Point, toSide: Side
   return cells.map((i) => cellToPoint(g, i % g.width, Math.floor(i / g.width)));
 }
 
+/**
+ * A crest between the position and the attacker: walking from the position
+ * towards the attacker, the ground rises to a high point 50–300 m away and
+ * then falls away beyond it.
+ */
+function crestInFront(ctx: Ctx, p: Point): { distanceM: number; point: Point } | null {
+  const S = SECTION_SCORING;
+  const g = ctx.cg;
+  const back = { x: -ctx.u.x, y: -ctx.u.y };
+  const h0 = elevationAtPoint(g, p);
+  let best = -Infinity;
+  let at = 0;
+  for (let d = S.crestMinM; d <= S.crestMaxM; d += g.cellM) {
+    const h = elevationAtPoint(g, { x: p.x + back.x * d, y: p.y + back.y * d });
+    if (h > best) [best, at] = [h, d];
+  }
+  if (best < h0 + S.crestRiseM || at >= S.crestMaxM) return null;
+  let lowest = best;
+  for (let d = at; d <= at + 250; d += g.cellM) {
+    lowest = Math.min(lowest, elevationAtPoint(g, { x: p.x + back.x * d, y: p.y + back.y * d }));
+  }
+  if (lowest > best - S.crestFallM) return null;
+  return { distanceM: at, point: { x: p.x + back.x * at, y: p.y + back.y * at } };
+}
+
 /** Score one position. Returns null if it does not block the route. */
 function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
   const { cg, spec } = ctx;
@@ -277,18 +322,21 @@ function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
     }
   }
   const fp = fwd(ctx, p);
-  // Route in front, within gun range.
-  let rIn = 0, rSeen = 0, rAlong = 0;
-  const cosEnf = Math.cos((S.enfiladeDeg * Math.PI) / 180);
+  // Route within gun range, in front of the position or alongside it (fire
+  // into the flank or rear of an attacker passing by counts too).
+  let rIn = 0, rSeen = 0, rFlank = 0;
+  const headOn = -Math.cos((S.flankMinDeg * Math.PI) / 180); // dot product limit
   ctx.route.forEach((q, k) => {
-    if (fwd(ctx, q) > fp - 20 || distance(p, q) > spec.gunRangeM) return;
+    if (fwd(ctx, q) > fp + 50 || distance(p, q) > spec.gunRangeM) return;
     rIn++;
     const qc = pointToCell(cg, q);
     if (!vs[qc.row * cg.width + qc.col]) return;
     rSeen++;
+    // Line of fire (from the position to the attacker) against the attacker's
+    // direction of movement: −1 = head-on, 0 = flank, +1 = rear.
     const d = distance(p, q) || 1;
     const lx = (q.x - p.x) / d, ly = (q.y - p.y) / d;
-    if (Math.abs(lx * ctx.routeDir[k].x + ly * ctx.routeDir[k].y) >= cosEnf) rAlong++;
+    if (lx * ctx.routeDir[k].x + ly * ctx.routeDir[k].y > headOn) rFlank++;
   });
   const routeCover = rIn ? rSeen / rIn : 0;
   if (routeCover < S.minRouteCover) return null;
@@ -325,13 +373,17 @@ function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
 
   const sil = isSilhouetted(cg, p, ctx.attackerBearing, { targetHeightM: spec.exposedM, notionalEnemyRangeM: 600 });
   const skylined = sil.silhouetted && sil.visibleToEnemy && !sil.ranOffGrid;
+  const crest = crestInFront(ctx, p);
+  const reverseSlope = !!crest && exposure <= 0.2;
 
   const scores = {
     fieldsOfFire: front ? frontSeen / front : 0,
     routeCover,
     deadGround: rifle ? 1 - rifleSeen / rifle : 1,
     exposure,
-    enfilade: rSeen ? rAlong / rSeen : 0,
+    flankFire: rSeen ? rFlank / rSeen : 0,
+    reverseSlope,
+    crestM: crest ? crest.distanceM : null,
     nearCover,
     coveredRear,
     skylined,
@@ -342,7 +394,8 @@ function score(ctx: Ctx, p: Point): (SectionScores & { vs: Mask }) | null {
     w.route * scores.routeCover -
     w.dead * scores.deadGround -
     w.exposure * scores.exposure +
-    w.enfilade * scores.enfilade +
+    w.flank * scores.flankFire +
+    w.reverse * (reverseSlope ? 1 : 0) +
     spec.coverWeight * (nearCover ? 1 : 0) +
     w.rear * coveredRear -
     w.skyline * (skylined ? 1 : 0);
@@ -475,17 +528,45 @@ export function placeEnemySection(input: SectionInput): SectionLayout | null {
   };
   const tA = at(-1), tB = at(1);
   const sA = score(ctx, tA), sB = score(ctx, tB);
-  const gunA = (sA?.routeCover ?? 0) + (sA?.enfilade ?? 0) * 0.5 >= (sB?.routeCover ?? 0) + (sB?.enfilade ?? 0) * 0.5;
+  const gunA = (sA?.routeCover ?? 0) + (sA?.flankFire ?? 0) * 0.5 >= (sB?.routeCover ?? 0) + (sB?.flankFire ?? 0) * 0.5;
   const teams: FireTeam[] = [
     { label: gunA ? 'Fire team 1 (gun)' : 'Fire team 1', point: tA, gun: gunA },
     { label: gunA ? 'Fire team 2' : 'Fire team 2 (gun)', point: tB, gun: !gunA },
   ];
+  // On a reverse slope, an outpost of 2 men forward, on or near the crest,
+  // where it sees most of the approach.
+  let outpostSees = 0;
+  const crest = pick.s.reverseSlope ? crestInFront(ctx, pick.p) : null;
+  if (crest) {
+    const back = { x: -ctx.u.x, y: -ctx.u.y };
+    let bestOp: Point | null = null;
+    let bestSeen = -1;
+    for (let ahead = 0; ahead <= 60; ahead += 20)
+      for (let l = -80; l <= 80; l += 20) {
+        const q = { x: crest.point.x + back.x * ahead + v.x * l, y: crest.point.y + back.y * ahead + v.y * l };
+        if (!standable(ctx, q)) continue;
+        const vs = viewshed(cg, q, { obsHeightM: S.outpostEyeM, targetHeightM: S.attackerHeightM, maxRangeM: S.outpostRangeM, obstacles: ctx.obstacles });
+        let seen = 0, total = 0;
+        for (const r of chosen.route) {
+          if (fwd(ctx, r) > fwd(ctx, q) - 20 || distance(r, q) > S.outpostRangeM) continue;
+          total++;
+          const rc = pointToCell(cg, r);
+          seen += vs[rc.row * cg.width + rc.col];
+        }
+        const share = total ? seen / total : 0;
+        if (share > bestSeen + 1e-9) [bestSeen, bestOp] = [share, q];
+      }
+    if (bestOp) {
+      teams.push({ label: 'Outpost (2 men)', point: bestOp, gun: false, outpost: true });
+      outpostSees = bestSeen;
+    }
+  }
 
   // Kill zone and dead ground in front, from both teams.
   const n = cg.width * cg.height;
   const killZone = new Uint8Array(n);
   const seenRifle = new Uint8Array(n);
-  for (const t of teams) {
+  for (const t of teams.filter((x) => !x.outpost)) {
     const range = t.gun ? spec.gunRangeM : spec.rifleRangeM;
     const vs = viewshed(cg, t.point, { obsHeightM: spec.eyeM, targetHeightM: S.attackerHeightM, maxRangeM: range, obstacles: ctx.obstacles });
     const rifleVs = t.gun ? viewshed(cg, t.point, { obsHeightM: spec.eyeM, targetHeightM: S.attackerHeightM, maxRangeM: spec.rifleRangeM, obstacles: ctx.obstacles }) : vs;
@@ -521,7 +602,13 @@ export function placeEnemySection(input: SectionInput): SectionLayout | null {
     `Sees ${pct(s.routeCover)} of the ${routeKind === 'across country' ? 'approach route' : routeKind} in front within ${spec.gunRangeM} m, and ${pct(s.fieldsOfFire)} of all the ground in front within that range.`,
     `Dead ground within ${spec.rifleRangeM} m in front: ${pct(s.deadGround)} (the attacker's covered approach).`,
     `Seen from ${Math.round(s.exposure * ctx.nViewpoints)} of the ${ctx.nViewpoints} places the attacker was assumed to look from${s.skylined ? '; skylined' : '; not skylined'}.`,
-    `${pct(s.enfilade)} of the route it sees is seen along its length (enfilade).`,
+    `${pct(s.flankFire)} of the route it sees is engaged from the flank or rear rather than head-on.`,
+    ...(s.reverseSlope && s.crestM !== null
+      ? [
+          `Reverse-slope position: a crest ${Math.round(s.crestM)} m in front hides it from the approach; the attacker is engaged as they come over the crest.` +
+            (outpostSees > 0 ? ` An outpost forward on the crest sees ${pct(outpostSees)} of the route in front of it, within ${S.outpostRangeM} m.` : ''),
+        ]
+      : []),
     s.nearCover ? 'Cover within 15 m (hedge, wall or wood edge).' : 'No hedge, wall or wood edge within 15 m.',
     `${pct(s.coveredRear)} of the ground 50–150 m behind is hidden from the attacker (a covered route back).`,
   ];
@@ -534,7 +621,7 @@ export function placeEnemySection(input: SectionInput): SectionLayout | null {
     routeKind,
     position: pick.p,
     teams,
-    scores: { fieldsOfFire: s.fieldsOfFire, routeCover: s.routeCover, deadGround: s.deadGround, exposure: s.exposure, enfilade: s.enfilade, nearCover: s.nearCover, coveredRear: s.coveredRear, skylined: s.skylined, total: s.total },
+    scores: { fieldsOfFire: s.fieldsOfFire, routeCover: s.routeCover, deadGround: s.deadGround, exposure: s.exposure, flankFire: s.flankFire, reverseSlope: s.reverseSlope, crestM: s.crestM, nearCover: s.nearCover, coveredRear: s.coveredRear, skylined: s.skylined, total: s.total },
     alternatives: tops.filter((t) => t !== pick).map((t) => ({ point: t.p, total: t.s.total })),
     attackerViewpoints: chosen.viewpoints,
     maskWidth: cg.width,

@@ -116,7 +116,7 @@ export interface SectionView {
   /** The DS solution: shown only when the user asks. */
   ds?: {
     position: Point;
-    teams: { label: string; point: Point; gun: boolean }[];
+    teams: { label: string; point: Point; gun: boolean; outpost?: boolean }[];
     route: Point[];
     alternatives: Point[];
     maskWidth: number;

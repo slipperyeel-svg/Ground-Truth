@@ -242,7 +242,7 @@ map.on('load', () => {
     id: 'section-points', type: 'circle', source: 'section', filter: ['!=', ['get', 'kind'], 'route'],
     paint: {
       'circle-radius': ['match', ['get', 'kind'], 'alt', 5, 8],
-      'circle-color': ['match', ['get', 'kind'], 'gun', '#7a0000', 'team', '#c00', '#c88'],
+      'circle-color': ['match', ['get', 'kind'], 'gun', '#7a0000', 'team', '#c00', 'outpost', '#e8a000', '#c88'],
       'circle-stroke-color': '#fff', 'circle-stroke-width': 2,
     },
   });
