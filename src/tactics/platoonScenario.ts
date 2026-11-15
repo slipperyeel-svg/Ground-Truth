@@ -338,16 +338,35 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
 
   // ---- Time and light (G6) ---------------------------------------------------
   const centre = g.meta.centre ?? { lat: 51.5, lon: -1 };
-  const now0 = input.now ?? new Date();
-  const sun = sunTimes(centre.lat, centre.lon, now0);
-  const dawn = random() < 0.6 && sun.firstLight;
-  const nowT = dawn ? new Date(sun.firstLight!.getTime() - 25 * 60_000) : new Date((sun.sunset ?? now0).getTime() - 165 * 60_000);
-  const byT = new Date(nowT.getTime() + (dawn ? 180 : 120) * 60_000);
+  // The time now is the real time, or the time the DS set for the problem (PO, 15 Nov 2026).
+  const nowT = input.now ?? new Date();
+  random(); // (was the dawn/afternoon choice; kept so the other choices for a seed stay the same)
+  const sun = sunTimes(centre.lat, centre.lon, nowT);
+  // Complete by: two hours on, to the nearest ten minutes (PO).
+  const tenMin = 10 * 60_000;
+  const byT = new Date(Math.round((nowT.getTime() + 120 * 60_000) / tenMin) * tenMin);
   const tz = input.timeZone;
   const dateStr = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: tz }).format(nowT);
-  const time = dawn
-    ? `${dateStr}. Time now ${hhmm(nowT, tz)}. First light ${hhmm(sun.firstLight, tz)}, sunrise ${hhmm(sun.sunrise, tz)}. Your task is to be complete by ${hhmm(byT, tz)}.`
-    : `${dateStr}. Time now ${hhmm(nowT, tz)}. Sunset ${hhmm(sun.sunset, tz)}, last light ${hhmm(sun.lastLight, tz)}: about ${Math.round(((sun.lastLight ?? sun.sunset ?? byT).getTime() - nowT.getTime()) / 3_600_000 * 10) / 10} hours of light remain. Your task is to be complete by ${hhmm(byT, tz)}.`;
+  const nowMs = nowT.getTime();
+  const hoursLeft = (until: Date) => Math.round(((until.getTime() - nowMs) / 3_600_000) * 10) / 10;
+  let light: string;
+  if (sun.sunrise && nowMs < sun.sunrise.getTime()) {
+    // Before sunrise: first light and sunrise today.
+    light = sun.firstLight && nowMs < sun.firstLight.getTime()
+      ? `It is dark. First light ${hhmm(sun.firstLight, tz)}, sunrise ${hhmm(sun.sunrise, tz)}.`
+      : `First light was ${hhmm(sun.firstLight, tz)}; sunrise ${hhmm(sun.sunrise, tz)}.`;
+  } else if (sun.lastLight && nowMs < sun.lastLight.getTime()) {
+    // Daylight: sunset, last light and the light left.
+    const mins = Math.round((sun.lastLight.getTime() - nowMs) / 60_000);
+    const left = mins < 60 ? `about ${Math.max(5, Math.round(mins / 5) * 5)} minutes of light remain` : `about ${hoursLeft(sun.lastLight)} hours of light remain`;
+    const set = sun.sunset && nowMs >= sun.sunset.getTime() ? `Sunset was ${hhmm(sun.sunset, tz)}` : `Sunset ${hhmm(sun.sunset, tz)}`;
+    light = `${set}, last light ${hhmm(sun.lastLight, tz)}: ${left}.`;
+  } else {
+    // After last light: dark until first light tomorrow.
+    const tomorrow = sunTimes(centre.lat, centre.lon, new Date(nowMs + 86_400_000));
+    light = `It is dark: last light was ${hhmm(sun.lastLight, tz)}. First light tomorrow ${hhmm(tomorrow.firstLight, tz)}, sunrise ${hhmm(tomorrow.sunrise, tz)}.`;
+  }
+  const time = `${dateStr}. Time now ${hhmm(nowT, tz)}. ${light} Your task is to be complete by ${hhmm(byT, tz)}.`;
   const t2 = new Date(nowT.getTime() + 40 * 60_000);
 
   // ---- Who you are, your force, situation and task (G2–G4) -------------------

@@ -171,3 +171,4 @@ details.options { margin-top: 8px; }
 details.options summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 /* The selected point belongs to the Start stage on the Problem page. */
 body[data-mode="problem"] #panel:not([data-stage="start"]) #point-block { display: none !important; }
+#inp-time { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var(--olive); border-radius: 6px; padding: 0 6px; background: #fff; }

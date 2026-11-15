@@ -58,3 +58,21 @@ describe('platoon scenario (Moltke guidelines G1–G13)', () => {
     expect(s.covered!.underFire).toBeLessThanOrEqual(s.direct!.underFire + 1e-9);
   });
 });
+
+describe('time and light (PO, 15 Nov 2026)', () => {
+  const at = (h: number, m: number) =>
+    writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now: new Date(Date.UTC(2026, 10, 15, h, m)), timeZone: 'Europe/London' }).time;
+  it('uses the time given, and rounds "complete by" to the nearest ten minutes', () => {
+    expect(at(10, 7)).toMatch(/Time now 1007\./);
+    expect(at(10, 7)).toMatch(/complete by 1210\./);
+    expect(at(6, 21)).toMatch(/complete by 0820\./);
+    expect(at(6, 26)).toMatch(/complete by 0830\./);
+  });
+  it('describes the light for the time of day', () => {
+    // Mid-November on Salisbury Plain: first light about 0650, sunrise about 0725, sunset about 1615.
+    expect(at(6, 21)).toMatch(/It is dark\. First light 06\d\d, sunrise 07\d\d\./);
+    expect(at(10, 7)).toMatch(/Sunset 16\d\d, last light 16\d\d: about \d+(\.\d)? hours of light remain\./);
+    expect(at(20, 0)).toMatch(/It is dark: last light was 16\d\d\. First light tomorrow 06\d\d/);
+    expect(at(16, 30)).toMatch(/Sunset was 16\d\d, last light 16\d\d: about \d+ minutes of light remain\./);
+  });
+});

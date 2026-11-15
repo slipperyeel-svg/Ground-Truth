@@ -36,7 +36,7 @@ import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addMineImages, ensurePointMeasure, ensureSymbol, type Echelon } from './app/symbols';
 import * as Plan from './app/plan';
 import { areaPosition, attackByFire, blockGraphic, supportByFire } from './app/graphics';
-import { axisArrow, controlLine, minefield, objective as objectiveGraphic, taskGraphic } from './app/graphics';
+import { controlLine, minefield, objective as objectiveGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
@@ -652,10 +652,11 @@ function renderSituation() {
   for (const f of m.friendly) {
     units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq, kind: f.kind }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
   }
-  for (const a of m.axes) graphics.push(...axisArrow(c, a.path[0], a.path[a.path.length - 1], 'friend', a.label));
+  // No axis arrows or task graphics: they cluttered the map (PO, 15 Nov 2026). Objectives,
+  // the boundary, start line and phase line stay; the task is in the text.
   for (const l of m.control) graphics.push(...controlLine(c, l.kind, l.path, l.label, l.sides));
   if (m.bgObjective.onMap) graphics.push(...objectiveGraphic(c, m.bgObjective.point, 250, m.bgObjective.name));
-  graphics.push(...taskGraphic(c, m.task));
+  if (m.task.kind !== 'screen') graphics.push(...objectiveGraphic(c, m.task.objective, 150, 'OBJ'));
 
   if (dsShown && scenario?.company?.platoons) {
     const co = scenario.company;
@@ -844,6 +845,27 @@ async function fillDsPage() {
   }
 }
 
+/** The time the problem is set for: now, or the date and time the DS chose in Problem options. */
+function problemTime(): number {
+  if (($('sel-time') as HTMLSelectElement).value === 'set') {
+    const v = ($('inp-time') as HTMLInputElement).value; // local time, e.g. 2026-11-16T05:30
+    const t = v ? new Date(v).getTime() : NaN;
+    if (Number.isFinite(t)) return t;
+  }
+  return Date.now();
+}
+$('sel-time').addEventListener('change', () => {
+  const set = ($('sel-time') as HTMLSelectElement).value === 'set';
+  const inp = $('inp-time') as HTMLInputElement;
+  inp.hidden = !set;
+  if (set && !inp.value) {
+    // Start from now, to the minute, in local time.
+    const d = new Date();
+    d.setSeconds(0, 0);
+    inp.value = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  }
+});
+
 async function runScenario(seed: number, resume?: Plan.SavedPlan) {
   if (!box) return;
   clearScenario();
@@ -853,7 +875,7 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
   try {
     const task = ($('sel-task') as HTMLSelectElement).value as TaskType | '';
     const info = ($('sel-info') as HTMLSelectElement).value as InfoLevel | '';
-    const now = resume?.problem.now ?? Date.now();
+    const now = resume?.problem.now ?? problemTime();
     scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
