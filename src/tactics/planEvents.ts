@@ -55,7 +55,7 @@ export interface DevelopedSituation {
   reached: Point;
 }
 
-type Ev = { atM: number; point: Point; apply: (msgTime: string) => void };
+type Ev = { atM: number; point: Point; apply: (msgTime: string) => void; kind?: 'fires' };
 
 export function developFromPlan(
   grid: Grid,
@@ -83,90 +83,99 @@ export function developFromPlan(
   };
   const sees = (e: EnemyPosition, p: Point, range: number) => distance(e.point, p) <= range && lineOfSight(grid, e.point, p, eyeE, ours, false, obs);
 
-  // Sample the route.
-  const samples: { p: Point; m: number }[] = [];
-  let run = 0;
-  for (let k = 1; k < plan.route.length; k++) {
-    const a = plan.route[k - 1], b = plan.route[k];
-    const d = distance(a, b);
-    const n = Math.max(1, Math.ceil(d / C.stepM));
-    for (let s = k === 1 ? 0 : 1; s <= n; s++) {
-      samples.push({ p: { x: a.x + ((b.x - a.x) * s) / n, y: a.y + ((b.y - a.y) * s) / n }, m: run + (d * s) / n });
+  // Sample each element's route.
+  type Sample = { p: Point; m: number };
+  const sampleRoute = (pts: Point[]): Sample[] => {
+    const out: Sample[] = [];
+    let run = 0;
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      const d = distance(a, b);
+      const n = Math.max(1, Math.ceil(d / C.stepM));
+      for (let s = k === 1 ? 0 : 1; s <= n; s++) out.push({ p: { x: a.x + ((b.x - a.x) * s) / n, y: a.y + ((b.y - a.y) * s) / n }, m: run + (d * s) / n });
+      run += d;
     }
-    run += d;
-  }
+    return out;
+  };
+  const routes = plan.routes.filter((r) => r.points.length >= 2).map((r) => ({ who: r.who, samples: sampleRoute(r.points), points: r.points }));
+  if (!routes.length) throw new Error('No route marked');
 
-  const out: DevelopedSituation = { time: '', messages: [], sightings: [], minefields: [], reached: plan.route[plan.route.length - 1] };
-  const events: Ev[] = [];
+  const lastRoute = routes[routes.length - 1];
+  const out: DevelopedSituation = { time: '', messages: [], sightings: [], minefields: [], reached: lastRoute.points[lastRoute.points.length - 1] };
+  const events: (Ev & { route: boolean })[] = [];
 
-  // First fire from an enemy position (outposts first, as they are forward).
-  for (const s of samples) {
-    const i = maskCell(s.p);
-    if (i < 0 || !L.killZone[i]) continue;
-    const firing = fighting.filter((e) => sees(e, s.p, C.fireRangeM));
-    if (!firing.length) continue;
-    const outpost = firing.find((e) => e.kind === 'outpost');
-    const shooter = outpost ?? firing.sort((a, b) => distance(a.point, s.p) - distance(b.point, s.p))[0];
-    events.push({
-      atM: s.m,
-      point: s.p,
-      apply: (t) => {
-        out.messages.push({
-          time: t,
-          from: 'Your lead section',
-          text: outpost
-            ? `At ${ref(s.p)}: under machine-gun fire from about ${ref(shooter.point)}, ${Math.round(distance(shooter.point, s.p) / 10) * 10} m away. Two or three men seen. We are in cover.`
-            : `At ${ref(s.p)}: under heavy fire from about ${ref(shooter.point)}${firing.length > 1 ? `, and from at least one more position` : ''}. We are in cover; one man wounded.`,
-        });
-        out.sightings.push({ point: shooter.point, echelon: outpost ? 'team' : echelon, label: outpost ? 'MG' : '' });
-        if (!outpost && firing.length > 1) {
-          const second = firing.find((e) => e !== shooter)!;
-          out.sightings.push({ point: second.point, echelon, label: '' });
-        }
-      },
-    });
-    break;
-  }
-
-  // Mined ground on the route.
-  if (L.mines) {
-    const hit = samples.find((s) => {
+  for (const r of routes) {
+    const samples = r.samples;
+    // First fire from an enemy position (outposts first, as they are forward).
+    for (const s of samples) {
       const i = maskCell(s.p);
-      return i >= 0 && L.mines![i];
-    });
-    if (hit)
+      if (i < 0 || !L.killZone[i]) continue;
+      const firing = fighting.filter((e) => sees(e, s.p, C.fireRangeM));
+      if (!firing.length) continue;
+      const outpost = firing.find((e) => e.kind === 'outpost');
+      const shooter = outpost ?? [...firing].sort((a, b) => distance(a.point, s.p) - distance(b.point, s.p))[0];
       events.push({
-        atM: hit.m,
-        point: hit.p,
+        route: true,
+        atM: s.m,
+        point: s.p,
         apply: (t) => {
-          out.messages.push({ time: t, from: 'Your lead section', text: `Anti-personnel mines found at ${ref(hit.p)}. One man slightly injured. We have stopped.` });
-          const r = C.mineFindRadiusM;
-          out.minefields.push({
-            outline: [0, 1, 2, 3].map((k) => ({ x: hit.p.x + r * Math.cos((k * Math.PI) / 2 + Math.PI / 4), y: hit.p.y + r * Math.sin((k * Math.PI) / 2 + Math.PI / 4) })),
-            label: 'Mines found',
+          out.messages.push({
+            time: t,
+            from: r.who,
+            text: outpost
+              ? `At ${ref(s.p)}: under machine-gun fire from about ${ref(shooter.point)}, ${Math.round(distance(shooter.point, s.p) / 10) * 10} m away. Two or three men seen. We are in cover.`
+              : `At ${ref(s.p)}: under heavy fire from about ${ref(shooter.point)}${firing.length > 1 ? `, and from at least one more position` : ''}. We are in cover; one man wounded.`,
           });
+          out.sightings.push({ point: shooter.point, echelon: outpost ? 'team' : echelon, label: outpost ? 'MG' : '' });
+          if (!outpost && firing.length > 1) out.sightings.push({ point: firing.find((e) => e !== shooter)!.point, echelon, label: '' });
         },
       });
-  }
+      break;
+    }
 
-  // Drones and artillery: a long stretch in the enemy's view at longer range.
-  if (L.options.isrFires) {
-    let inView = 0;
-    for (let k = 0; k < samples.length; k += 5) {
-      const s = samples[k];
-      const seen = real.some((e) => sees(e, s.p, C.observeRangeM));
-      inView = seen ? inView + C.stepM * 5 : 0;
-      if (inView >= C.exposedForFiresM) {
+    // Mined ground on the route.
+    if (L.mines) {
+      const hit = samples.find((s) => {
+        const i = maskCell(s.p);
+        return i >= 0 && L.mines![i];
+      });
+      if (hit)
         events.push({
-          atM: s.m,
-          point: s.p,
+          route: true,
+          atM: hit.m,
+          point: hit.p,
           apply: (t) => {
-            const before = hhmm(new Date(timeAt(s.m).getTime() - 8 * 60_000));
-            out.messages.push({ time: before, from: 'Your platoon sergeant', text: 'Enemy drone overhead, watching us.' });
-            out.messages.push({ time: t, from: 'Your platoon sergeant', text: `Six rounds of enemy artillery landed close to us at ${ref(s.p)}. Two men wounded.` });
+            out.messages.push({ time: t, from: r.who, text: `Anti-personnel mines found at ${ref(hit.p)}. One man slightly injured. We have stopped.` });
+            const rr = C.mineFindRadiusM;
+            out.minefields.push({
+              outline: [0, 1, 2, 3].map((k) => ({ x: hit.p.x + rr * Math.cos((k * Math.PI) / 2 + Math.PI / 4), y: hit.p.y + rr * Math.sin((k * Math.PI) / 2 + Math.PI / 4) })),
+              label: 'Mines found',
+            });
           },
         });
-        break;
+    }
+
+    // Drones and artillery: a long stretch in the enemy's view at longer range.
+    if (L.options.isrFires) {
+      let inView = 0;
+      for (let k = 0; k < samples.length; k += 5) {
+        const s = samples[k];
+        const seen = real.some((e) => sees(e, s.p, C.observeRangeM));
+        inView = seen ? inView + C.stepM * 5 : 0;
+        if (inView >= C.exposedForFiresM) {
+          events.push({
+            route: true,
+            kind: 'fires',
+            atM: s.m,
+            point: s.p,
+            apply: (t) => {
+              const before = hhmm(new Date(timeAt(s.m).getTime() - 8 * 60_000));
+              out.messages.push({ time: before, from: r.who, text: 'Enemy drone overhead, watching us.' });
+              out.messages.push({ time: t, from: r.who, text: `Six rounds of enemy artillery landed close to us at ${ref(s.p)}. Two men wounded.` });
+            },
+          });
+          break;
+        }
       }
     }
   }
@@ -176,8 +185,10 @@ export function developFromPlan(
   if (watch) {
     const seenReal = fighting.filter((e) => distance(e.point, watch.point) <= C.observeRangeM && lineOfSight(grid, watch.point, e.point, ours, showE, false, obs));
     const seenDummy = L.dummies.filter((d) => distance(d.point, watch.point) <= C.observeRangeM && lineOfSight(grid, watch.point, d.point, ours, showE, false, obs));
-    const atM = distance(plan.route[0], watch.point);
+    // Reached first by the element whose route passes nearest it: distance along its route, then across to it, at 2 km/h.
+    const atM = Math.min(...routes.flatMap((r) => r.samples.map((x) => x.m + distance(x.p, watch.point))));
     events.push({
+      route: false,
       atM,
       point: watch.point,
       apply: (t) => {
@@ -201,17 +212,22 @@ export function developFromPlan(
     });
   }
 
-  // Nothing happened on the route: the enemy reacts instead.
-  const routeEvents = events.filter((e) => e.point !== watch?.point);
-  if (!routeEvents.length) {
+  // Drones and artillery come once, onto whichever element is seen first.
+  const fires = events.filter((e) => e.kind === 'fires').sort((a, b) => a.atM - b.atM);
+  for (const e of fires.slice(1)) events.splice(events.indexOf(e), 1);
+
+  // Nothing happened on any route: the enemy reacts instead.
+  if (!events.some((e) => e.route)) {
     const depth = L.platoons.find((p) => p.role === 'depth');
-    const endM = samples.length ? samples[samples.length - 1].m : 0;
-    const end = plan.route[plan.route.length - 1];
+    const lead = routes.reduce((a, b) => (a.samples[a.samples.length - 1].m >= b.samples[b.samples.length - 1].m ? a : b));
+    const endM = lead.samples[lead.samples.length - 1].m;
+    const end = lead.points[lead.points.length - 1];
     events.push({
+      route: true,
       atM: endM,
       point: end,
       apply: (t) => {
-        out.messages.push({ time: t, from: 'Your lead section', text: `At ${ref(end)}, not fired on. No enemy seen close.` });
+        out.messages.push({ time: t, from: lead.who, text: `At ${ref(end)}, not fired on. No enemy seen close.` });
         if (depth) {
           out.messages.push({
             time: hhmm(new Date(timeAt(endM).getTime() + 4 * 60_000)),
@@ -226,7 +242,7 @@ export function developFromPlan(
 
   // The first event, and a second if it follows soon after.
   events.sort((a, b) => a.atM - b.atM);
-  const firstRoute = events.find((e) => e.point !== watch?.point) ?? events[0];
+  const firstRoute = events.find((e) => e.route) ?? events[0];
   const chosen = [firstRoute];
   const second = events.find((e) => e !== firstRoute && (e.atM - firstRoute.atM) / mps / 60 <= C.secondWithinMin && e.atM >= 0);
   if (second) chosen.push(second);
@@ -234,9 +250,8 @@ export function developFromPlan(
   out.messages.sort((a, b) => a.time.localeCompare(b.time));
 
   // Where the lead element is: the furthest point reached on the route by the first route event.
-  const reachedM = firstRoute.atM;
-  out.reached = samples.find((s) => s.m >= reachedM)?.p ?? out.reached;
+  out.reached = firstRoute.point;
   const nowT = timeAt(Math.max(...chosen.map((e) => e.atM)));
-  out.time = `${hhmm(nowT)}. Your platoon moved off at ${hhmm(new Date(moveOff))} by the route you marked.`;
+  out.time = `${hhmm(nowT)}. Your platoon moved off at ${hhmm(new Date(moveOff))} by the routes you marked.`;
   return out;
 }

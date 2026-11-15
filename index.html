@@ -130,24 +130,33 @@
           <p id="sc-allowed" class="detail"></p>
           <div id="plan-block">
             <h3>Your plan</h3>
-            <p class="detail">Mark your plan on the map: tap to place it, or walk to the spot and mark where you stand. It is kept on this phone. When the situation develops, it develops from the route you mark.</p>
-            <div class="row buttons">
-              <button id="btn-plan-route">Draw my route</button>
-              <button id="btn-plan-mark">Mark a position</button>
-            </div>
+            <p class="detail">Mark your plan on the map: tap to place it, or walk to the spot and mark where you stand. It is kept on this phone. Draw a route for each section and for Platoon HQ: the situation develops from the routes you mark.</p>
             <div class="row selects">
+              <label>Route for
+                <select id="sel-route">
+                  <option>1 Sect</option>
+                  <option>2 Sect</option>
+                  <option>3 Sect</option>
+                  <option>Pl HQ</option>
+                </select>
+              </label>
               <label>Position
                 <select id="sel-mark">
                   <option>OP</option>
                   <option>Fire support</option>
+                  <option>Attack by fire</option>
                   <option>FUP</option>
-                  <option>Assault</option>
+                  <option>Assault position</option>
                   <option>Cut-off</option>
                   <option>Pl HQ</option>
                   <option>RV</option>
                   <option>Other</option>
                 </select>
               </label>
+            </div>
+            <div class="row buttons">
+              <button id="btn-plan-route">Draw route</button>
+              <button id="btn-plan-mark">Mark a position</button>
             </div>
             <div class="row buttons">
               <button id="btn-plan-here">Mark where I stand</button>

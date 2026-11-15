@@ -93,11 +93,11 @@ function secure(c: LL, p: Point, r = 220): Feature[] {
   ];
 }
 
-/** Neutralise: a cross through the target, labelled N. */
+/** Neutralise (APP-6): a cross through the target with one arm dashed (a solid cross is "destroy"), labelled N. */
 function neutralise(c: LL, p: Point, r = 200): Feature[] {
   return [
     line(c, [{ x: p.x - r, y: p.y - r }, { x: p.x + r, y: p.y + r }], { kind: 'task', side: 'friend' }),
-    line(c, [{ x: p.x - r, y: p.y + r }, { x: p.x + r, y: p.y - r }], { kind: 'task', side: 'friend' }),
+    line(c, [{ x: p.x - r, y: p.y + r }, { x: p.x + r, y: p.y - r }], { kind: 'task', side: 'friend', dashed: true }),
     label(c, { x: p.x, y: p.y + r + 50 }, 'N', { side: 'friend', big: true }),
   ];
 }
@@ -117,16 +117,18 @@ function fix(c: LL, from: Point, to: Point): Feature[] {
   ];
 }
 
-/** Screen: a line along the flank with open arrowheads at each end, labelled S. */
+/** Screen (APP-6): from the centre outwards, a line to each end with a zig-zag and an arrowhead, and S either side. */
 function screen(c: LL, p: Point, along: Point): Feature[] {
-  const a = add(p, along, -400), b = add(p, along, 400);
   const n = perp(along);
-  return [
-    line(c, [a, b], { kind: 'task', side: 'friend' }),
-    line(c, [add(add(a, along, 50), n, 30), a, add(add(a, along, 50), n, -30)], { kind: 'task', side: 'friend' }),
-    line(c, [add(add(b, along, -50), n, 30), b, add(add(b, along, -50), n, -30)], { kind: 'task', side: 'friend' }),
-    label(c, add(p, n, 60), 'S', { side: 'friend', big: true }),
-  ];
+  const out: Feature[] = [];
+  for (const s of [-1, 1]) {
+    const dir = { x: along.x * s, y: along.y * s };
+    const z0 = add(p, dir, 220), z1 = add(add(p, dir, 260), n, 45), z2 = add(add(p, dir, 300), n, -45), end = add(p, dir, 400);
+    out.push(line(c, [add(p, dir, 120), z0, z1, z2, add(z2, dir, 30), end], { kind: 'task', side: 'friend' }));
+    out.push(line(c, [add(add(end, dir, -40), n, 22), end, add(add(end, dir, -40), n, -22)], { kind: 'task', side: 'friend' }));
+    out.push(label(c, add(p, dir, 70), 'S', { side: 'friend', big: true }));
+  }
+  return out;
 }
 
 export function taskGraphic(
@@ -170,4 +172,72 @@ export function minefield(c: LL, outline: Point[], type: MineType, side: 'hostil
     geometry: { type: 'Point', coordinates: toLL(c, add(centre, along, k * step)) },
   }));
   return [polygon(c, outline, { kind: 'minefield', side, dashed }), ...mines];
+}
+
+// ---------- The user's planned positions (APP-6 control measures, friendly blue) ----------
+// `dir` is a unit vector from the position towards the enemy / objective.
+// Drawn about twice real size, so they read at the zoom a plan is made at.
+const K = 2;
+
+/** An area position (FUP, assault position): a rounded outline across the line of advance, labelled inside. */
+export function areaPosition(c: LL, p: Point, dir: Point, text: string, w0 = 160, d0 = 90): Feature[] {
+  const n = perp(dir);
+  const w = w0 * K, d = d0 * K;
+  const ring: Point[] = [];
+  const r = d / 2;
+  // Two straight sides across the advance, joined by half-circles at each end.
+  for (const side of [1, -1]) {
+    const centre = add(p, n, (side * (w - d)) / 2);
+    for (let k = 0; k <= 12; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 12;
+      // a sweeps from -90° to +90° around the end, in the frame (n, dir).
+      ring.push(add(add(centre, n, side * r * Math.cos(a)), dir, side * r * Math.sin(a)));
+    }
+  }
+  return [line(c, [...ring, ring[0]], { kind: 'plan', side: 'friend' }), label(c, p, text, { side: 'friend' })];
+}
+
+/** Support by fire position (APP-6 SBF): a base line; from each end an arrow forward and outward, and a short stub back and outward. */
+export function supportByFire(c: LL, p: Point, dir: Point, text = 'SBF'): Feature[] {
+  const n = perp(dir);
+  const half = 80 * K, len = 80 * K;
+  const a = add(p, n, -half), b = add(p, n, half);
+  const tipA = add(add(a, dir, len), n, -len * 0.6), tipB = add(add(b, dir, len), n, len * 0.6);
+  const stubA = add(add(a, dir, -40 * K), n, -25 * K), stubB = add(add(b, dir, -40 * K), n, 25 * K);
+  const head = (from: Point, tip: Point) => {
+    const u = unit(from, tip), q = perp(u);
+    return [add(add(tip, u, -25 * K), q, 14 * K), tip, add(add(tip, u, -25 * K), q, -14 * K)];
+  };
+  return [
+    line(c, [a, b], { kind: 'plan', side: 'friend' }),
+    line(c, [a, tipA], { kind: 'plan', side: 'friend' }),
+    line(c, [b, tipB], { kind: 'plan', side: 'friend' }),
+    line(c, head(a, tipA), { kind: 'plan', side: 'friend' }),
+    line(c, head(b, tipB), { kind: 'plan', side: 'friend' }),
+    line(c, [a, stubA], { kind: 'plan', side: 'friend' }),
+    line(c, [b, stubB], { kind: 'plan', side: 'friend' }),
+    label(c, add(p, dir, -35 * K), text, { side: 'friend' }),
+  ];
+}
+
+/** Attack by fire position (APP-6 ABF): a base line with its ends bent back, and an arrow forward from the centre. */
+export function attackByFire(c: LL, p: Point, dir: Point, text = 'ABF'): Feature[] {
+  const n = perp(dir);
+  const half = 60 * K, tip = add(p, dir, 130 * K);
+  return [
+    line(c, [add(add(p, n, -half - 40 * K), dir, -40 * K), add(p, n, -half), add(p, n, half), add(add(p, n, half + 40 * K), dir, -40 * K)], { kind: 'plan', side: 'friend' }),
+    line(c, [p, tip], { kind: 'plan', side: 'friend' }),
+    line(c, [add(add(tip, dir, -25 * K), n, 14 * K), tip, add(add(tip, dir, -25 * K), n, -14 * K)], { kind: 'plan', side: 'friend' }),
+    label(c, add(p, dir, -35 * K), text, { side: 'friend' }),
+  ];
+}
+
+/** Block (APP-6 mission task), used for a cut-off: a bar across the enemy's line of movement, with a stem from our side, labelled B. */
+export function blockGraphic(c: LL, p: Point, dir: Point, text = 'B'): Feature[] {
+  const n = perp(dir);
+  return [
+    line(c, [add(p, n, -70 * K), add(p, n, 70 * K)], { kind: 'plan', side: 'friend' }),
+    line(c, [p, add(p, dir, -110 * K)], { kind: 'plan', side: 'friend' }),
+    label(c, add(add(p, dir, -60 * K), n, 30 * K), text, { side: 'friend' }),
+  ];
 }

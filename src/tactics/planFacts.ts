@@ -25,11 +25,13 @@ export interface PlanMark {
 }
 
 export interface PlanInput {
-  route: Point[];
+  /** One route per element of the platoon (e.g. '1 Section', 'Platoon HQ'). */
+  routes: { who: string; points: Point[] }[];
   positions: PlanMark[];
 }
 
 export interface PlanFacts {
+  /** One paragraph per route. */
   route: string[];
   positions: { label: string; facts: string[] }[];
 }
@@ -78,14 +80,16 @@ export function planFacts(
     return best ? { e: best, d } : null;
   };
 
-  // ---- Route ----
+  // ---- Routes ----
   const route: string[] = [];
-  if (plan.route.length >= 2) {
+  for (const r of plan.routes) {
+    if (r.points.length < 2) continue;
+    const pts = r.points;
     const step = 5;
     let len = 0, fire = 0, mines = 0, run = 0, longest = 0, firstFire = -1;
     let closest = Infinity, closestTo: EnemyPosition | null = null;
-    for (let k = 1; k < plan.route.length; k++) {
-      const a = plan.route[k - 1], b = plan.route[k];
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
       const d = distance(a, b);
       const n = Math.max(1, Math.ceil(d / step));
       for (let s = 1; s <= n; s++) {
@@ -103,14 +107,15 @@ export function planFacts(
         if (ne && ne.d < closest) [closest, closestTo] = [ne.d, ne.e];
       }
     }
-    route.push(`Your route: ${metres(len)} long.`);
-    route.push(
+    const parts = [`${r.who}'s route: ${metres(len)} long.`];
+    parts.push(
       fire > 0
         ? `${Math.round((fire / len) * 100)}% of it (${metres(fire)}) lay under enemy fire, first after ${metres(firstFire)}; the longest stretch under fire without a break was ${metres(longest)}.`
         : 'None of it lay under enemy fire.',
     );
-    if (L.mines) route.push(mines > 0 ? `It crossed about ${metres(mines)} of mined ground.` : 'It crossed no mined ground.');
-    if (closestTo) route.push(`It came within ${metres(closest)} of the nearest enemy position (${closestTo.label}, ${ref(closestTo.point)}).`);
+    if (L.mines) parts.push(mines > 0 ? `It crossed about ${metres(mines)} of mined ground.` : 'It crossed no mined ground.');
+    if (closestTo) parts.push(`It came within ${metres(closest)} of the nearest enemy position (${closestTo.label}, ${ref(closestTo.point)}).`);
+    route.push(parts.join(' '));
   }
 
   // ---- Positions ----

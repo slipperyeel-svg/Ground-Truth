@@ -125,3 +125,43 @@ export function addMineImages(map: MapLibreMap): void {
   draw('mine-at', true, false);
   draw('mine-ap', true, true);
 }
+
+/**
+ * Friendly point control measures (APP-6), drawn in blue: "cm-op" (observation
+ * post: a triangle) and pins with text inside ("cm-pin-RV" etc.), since the
+ * symbol library cannot put custom text inside its pins.
+ */
+export function ensurePointMeasure(map: MapLibreMap, kind: 'op' | 'pin', text = ''): string {
+  const name = kind === 'op' ? 'cm-op' : `cm-pin-${text}`;
+  if (map.hasImage(name)) return name;
+  const ratio = 3;
+  const w = kind === 'op' ? 26 : Math.max(26, 10 + text.length * 9), h = kind === 'op' ? 24 : 38;
+  const canvas = document.createElement('canvas');
+  canvas.width = w * ratio;
+  canvas.height = h * ratio;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(ratio, ratio);
+  ctx.strokeStyle = '#0a3fa8';
+  ctx.lineWidth = 2.5;
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  if (kind === 'op') {
+    ctx.moveTo(w / 2, 2); ctx.lineTo(w - 2, h - 2); ctx.lineTo(2, h - 2); ctx.closePath();
+  } else {
+    // A pin: a box with a point at the bottom, which marks the place.
+    const boxH = 22;
+    ctx.moveTo(2, 2); ctx.lineTo(w - 2, 2); ctx.lineTo(w - 2, boxH); ctx.lineTo(w / 2, h - 2); ctx.lineTo(2, boxH); ctx.closePath();
+  }
+  ctx.fill();
+  ctx.stroke();
+  if (kind === 'pin') {
+    ctx.fillStyle = '#0a3fa8';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, w / 2, 12);
+  }
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  map.addImage(name, { width: img.width, height: img.height, data: new Uint8Array(img.data.buffer) }, { pixelRatio: ratio });
+  return name;
+}

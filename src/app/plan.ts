@@ -14,15 +14,21 @@ export interface PlanMarkLL extends LatLon {
   label: string;
 }
 
+/** One route for each element of the platoon (PO, 15 Nov 2026). */
+export const ROUTE_WHO = ['1 Sect', '2 Sect', '3 Sect', 'Pl HQ'] as const;
+export type RouteWho = (typeof ROUTE_WHO)[number];
+/** How a report from each element is signed. */
+export const WHO_NAME: Record<RouteWho, string> = { '1 Sect': '1 Section', '2 Sect': '2 Section', '3 Sect': '3 Section', 'Pl HQ': 'Platoon HQ' };
+
 export interface PlanState {
-  route: LatLon[];
+  routes: Record<RouteWho, LatLon[]>;
   marks: PlanMarkLL[];
   /** Answers to the requirement questions, in order. */
   answers: string[];
   /** Answers to the questions when the situation develops. */
   answers2: string[];
-  /** What was added, in order, for Undo. */
-  history: ('route' | 'mark')[];
+  /** What was added, in order, for Undo: 'mark', or the route a point was added to. */
+  history: ('mark' | RouteWho)[];
   /** The situation as it developed on the route marked (worked out once, then fixed). */
   developed?: DevelopedSituation;
 }
@@ -46,9 +52,15 @@ export interface SavedPlan {
   savedAt: number;
 }
 
-export const emptyPlan = (): PlanState => ({ route: [], marks: [], answers: [], answers2: [], history: [] });
+const noRoutes = () => Object.fromEntries(ROUTE_WHO.map((w) => [w, []])) as unknown as Record<RouteWho, LatLon[]>;
+export const emptyPlan = (): PlanState => ({ routes: noRoutes(), marks: [], answers: [], answers2: [], history: [] });
 
-const KEY = 'ground-truth.plan.v1';
+/** Routes with at least two points, in platoon order. */
+export const drawnRoutes = (plan: PlanState) => ROUTE_WHO.filter((w) => plan.routes[w].length >= 2).map((w) => ({ who: w, points: plan.routes[w] }));
+/** Elements with no route yet. */
+export const missingRoutes = (plan: PlanState) => ROUTE_WHO.filter((w) => plan.routes[w].length < 2);
+
+const KEY = 'ground-truth.plan.v2'; // v2: one route per element
 
 export function savePlan(problem: ProblemKey, plan: PlanState): void {
   try {
@@ -75,9 +87,9 @@ export function nextLabel(plan: PlanState, kind: string): string {
   return n ? `${kind} ${n + 1}` : kind;
 }
 
-export function addRoutePoint(plan: PlanState, p: LatLon): void {
-  plan.route.push({ lat: p.lat, lon: p.lon });
-  plan.history.push('route');
+export function addRoutePoint(plan: PlanState, who: RouteWho, p: LatLon): void {
+  plan.routes[who].push({ lat: p.lat, lon: p.lon });
+  plan.history.push(who);
 }
 
 export function addMark(plan: PlanState, kind: string, p: LatLon): PlanMarkLL {
@@ -89,8 +101,8 @@ export function addMark(plan: PlanState, kind: string, p: LatLon): PlanMarkLL {
 
 export function undo(plan: PlanState): void {
   const last = plan.history.pop();
-  if (last === 'route') plan.route.pop();
-  else if (last === 'mark') plan.marks.pop();
+  if (last === 'mark') plan.marks.pop();
+  else if (last) plan.routes[last].pop();
 }
 
 export function removeMark(plan: PlanState, index: number): void {
@@ -102,7 +114,7 @@ export function removeMark(plan: PlanState, index: number): void {
 }
 
 export function isEmpty(plan: PlanState): boolean {
-  return !plan.route.length && !plan.marks.length && !plan.answers.some((a) => a.trim()) && !plan.answers2.some((a) => a.trim());
+  return ROUTE_WHO.every((w) => !plan.routes[w].length) && !plan.marks.length && !plan.answers.some((a) => a.trim()) && !plan.answers2.some((a) => a.trim());
 }
 
 /** The plan as a plain-text record, with the problem it answers. */
@@ -127,8 +139,8 @@ export function planReport(args: {
     out.push('');
   }
   out.push('MY PLAN');
-  if (plan.route.length) out.push(`Route: ${plan.route.map(ref).join(' → ')}`);
-  else out.push('Route: not marked');
+  for (const w of ROUTE_WHO)
+    out.push(`${WHO_NAME[w]} route: ${plan.routes[w].length >= 2 ? plan.routes[w].map(ref).join(' → ') : 'not marked'}`);
   if (plan.marks.length) for (const m of plan.marks) out.push(`${m.label}: ${ref(m)}`);
   else out.push('Positions: none marked');
   out.push('');

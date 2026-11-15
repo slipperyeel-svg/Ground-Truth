@@ -33,8 +33,9 @@ import {
   type BoxGeo,
 } from './app/overlays';
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
-import { addMineImages, ensureSymbol, type Echelon } from './app/symbols';
+import { addMineImages, ensurePointMeasure, ensureSymbol, type Echelon } from './app/symbols';
 import * as Plan from './app/plan';
+import { areaPosition, attackByFire, blockGraphic, supportByFire } from './app/graphics';
 import { axisArrow, controlLine, minefield, objective as objectiveGraphic, taskGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
@@ -378,14 +379,30 @@ map.on('load', () => {
     id: 'plan-points', type: 'circle', source: 'plan', filter: ['==', ['get', 'kind'], 'vertex'],
     paint: { 'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': '#0a3fa8', 'circle-stroke-width': 2 },
   });
+  // Planned positions as APP-6 control measures: lines and areas (SBF, ABF, FUP, block)...
   map.addLayer({
-    id: 'plan-marks', type: 'circle', source: 'plan', filter: ['==', ['get', 'kind'], 'mark'],
-    paint: { 'circle-radius': 8, 'circle-color': '#0a3fa8', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 },
+    id: 'plan-lines', type: 'line', source: 'plan', filter: ['==', ['get', 'kind'], 'plan'],
+    paint: { 'line-color': '#0a3fa8', 'line-width': 3 },
   });
+  // ...point measures and the platoon HQ symbol...
   map.addLayer({
-    id: 'plan-labels', type: 'symbol', source: 'plan', filter: ['==', ['get', 'kind'], 'mark'],
+    id: 'plan-icons', type: 'symbol', source: 'plan', filter: ['==', ['get', 'kind'], 'icon'],
     layout: {
-      'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-anchor': 'left', 'text-offset': [0.9, 0],
+      'icon-image': ['get', 'icon'], 'icon-anchor': ['get', 'anchor'], 'icon-offset': ['get', 'off'],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.9, 14, 1.2, 16, 2, 18, 2.8],
+      'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-anchor': 'left', 'text-offset': [1.2, -0.6],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 13, 16, 18], 'text-optional': true,
+    },
+    paint: { 'text-color': '#0a3fa8', 'text-halo-color': '#fff', 'text-halo-width': 2.5 },
+  });
+  // ...and the labels: on each graphic, and at the end of each route ("1 Sect").
+  map.addLayer({
+    id: 'plan-labels', type: 'symbol', source: 'plan', filter: ['in', ['get', 'kind'], ['literal', ['label', 'routeLabel']]],
+    layout: {
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT],
+      'text-anchor': ['case', ['==', ['get', 'kind'], 'routeLabel'], 'bottom-left', 'center'],
+      'text-offset': ['case', ['==', ['get', 'kind'], 'routeLabel'], ['literal', [0.4, -0.2]], ['literal', [0, 0]]],
       'text-size': ['interpolate', ['linear'], ['zoom'], 12, 13, 16, 18], 'text-allow-overlap': true,
     },
     paint: { 'text-color': '#0a3fa8', 'text-halo-color': '#fff', 'text-halo-width': 2.5 },
@@ -773,9 +790,10 @@ $('btn-sc-develop').addEventListener('click', async () => {
   const s = scenario?.scenario;
   if (!s || !box) return;
   if (plan.developed) return showDeveloped(plan.developed);
-  if (plan.route.length < 2) {
-    $('plan-mode').textContent = 'Mark your route first (Draw my route): the situation develops from the route you choose.';
-    status('Mark your route before the situation develops');
+  const missing = Plan.missingRoutes(plan);
+  if (missing.length) {
+    $('plan-mode').textContent = `Draw a route for ${missing.map((w) => Plan.WHO_NAME[w]).join(', ')} first: the situation develops from the routes you choose.`;
+    status('Mark every route before the situation develops');
     $('plan-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
@@ -784,7 +802,7 @@ $('btn-sc-develop').addEventListener('click', async () => {
   status('Working out what happens on your route…');
   try {
     const d = await engine.develop(
-      { route: plan.route.map(toLocal), positions: plan.marks.map((m) => ({ kind: m.kind, label: m.label, point: toLocal(m) })) },
+      planInput(),
       s.startMs,
     );
     plan.developed = d;
@@ -819,21 +837,83 @@ $('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden 
 const toLocal = (p: Plan.LatLon) => latLonToLocal(box!.centre, p.lat, p.lon);
 const ref8 = (p: Plan.LatLon) => gridRef(p.lat, p.lon, 4).ref;
 
+/** The plan in local metres, for the worker: one route per element, and the positions. */
+function planInput() {
+  return {
+    routes: Plan.drawnRoutes(plan).map((r) => ({ who: Plan.WHO_NAME[r.who], points: r.points.map(toLocal) })),
+    positions: plan.marks.map((m) => ({ kind: m.kind, label: m.label, point: toLocal(m) })),
+  };
+}
+
 function savePlanNow() {
   if (problemKey) Plan.savePlan(problemKey, plan);
+}
+
+/**
+ * A planned position as its APP-6 graphic (PO, 15 Nov 2026), facing the
+ * objective: OP triangle; support by fire (SBF) and attack by fire (ABF)
+ * positions; FUP and assault position areas; cut-off as a block; Pl HQ as
+ * the HQ unit symbol; RV and other points as labelled pins.
+ */
+function markFeatures(m: Plan.PlanMarkLL): object[] {
+  const c = box!.centre;
+  const p = toLocal(m);
+  const s = scenario?.scenario;
+  const obj = s?.markers.task.objective ?? { x: p.x, y: p.y + 1 };
+  let d = { x: obj.x - p.x, y: obj.y - p.y };
+  const len = Math.hypot(d.x, d.y);
+  // Too close to the objective to tell: face the way the platoon is advancing.
+  if (len < 50 && s) d = { x: obj.x - s.markers.friendly[0].point.x, y: obj.y - s.markers.friendly[0].point.y };
+  const n = Math.hypot(d.x, d.y) || 1;
+  const dir = { x: d.x / n, y: d.y / n };
+  const num = m.label.match(/ (\d+)$/)?.[1] ?? '';
+  const withNum = (t: string) => (num ? `${t} ${num}` : t);
+  const icon = (name: string, anchor: string, text: string, off: [number, number] = [0, 0]) => [
+    { type: 'Feature', properties: { kind: 'icon', icon: name, anchor, text, off }, geometry: { type: 'Point', coordinates: [m.lon, m.lat] } },
+  ];
+  switch (m.kind) {
+    case 'OP':
+      return icon(ensurePointMeasure(map, 'op'), 'center', withNum('OP'));
+    case 'Fire support':
+      return supportByFire(c, p, dir, withNum('SBF'));
+    case 'Attack by fire':
+      return attackByFire(c, p, dir, withNum('ABF'));
+    case 'FUP':
+      return areaPosition(c, p, dir, withNum('FUP'));
+    case 'Assault position':
+      return areaPosition(c, p, dir, withNum('ASLT PSN'), 200);
+    case 'Cut-off':
+      return blockGraphic(c, p, dir, withNum('B'));
+    case 'Pl HQ': {
+      const kind = s?.bgType === 'mechanised' ? 'mechanisedInfantry' : 'infantry';
+      const { name, offset } = ensureSymbol(map, { identity: 'friend', echelon: 'platoon', hq: true, kind }, { designation: '2', higher: 'B' });
+      return icon(name, 'top-left', '', offset);
+    }
+    case 'RV':
+      return icon(ensurePointMeasure(map, 'pin', withNum('RV')), 'bottom', '');
+    default:
+      return icon(ensurePointMeasure(map, 'pin', withNum('PT')), 'bottom', '');
+  }
 }
 
 /** Draw the plan on the map and list it in the panel; set the tool buttons. */
 function renderPlan() {
   const features: object[] = [];
-  if (plan.route.length >= 2)
-    features.push({ type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: plan.route.map((p) => [p.lon, p.lat]) } });
-  for (const p of plan.route) features.push({ type: 'Feature', properties: { kind: 'vertex' }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
-  for (const m of plan.marks) features.push({ type: 'Feature', properties: { kind: 'mark', label: m.label }, geometry: { type: 'Point', coordinates: [m.lon, m.lat] } });
+  const pt = (p: Plan.LatLon) => ({ type: 'Point', coordinates: [p.lon, p.lat] });
+  for (const w of Plan.ROUTE_WHO) {
+    const r = plan.routes[w];
+    if (r.length >= 2) features.push({ type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: r.map((p) => [p.lon, p.lat]) } });
+    for (const p of r) features.push({ type: 'Feature', properties: { kind: 'vertex' }, geometry: pt(p) });
+    if (r.length) features.push({ type: 'Feature', properties: { kind: 'routeLabel', text: w }, geometry: pt(r[r.length - 1]) });
+  }
+  if (box) for (const m of plan.marks) features.push(...markFeatures(m));
   (map.getSource('plan') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features } as never);
 
   const items: HTMLElement[] = [];
-  if (plan.route.length) items.push(el('li', `Route: ${plan.route.length} point${plan.route.length > 1 ? 's' : ''}, from ${ref8(plan.route[0])} to ${ref8(plan.route[plan.route.length - 1])}`));
+  for (const w of Plan.ROUTE_WHO) {
+    const r = plan.routes[w];
+    if (r.length) items.push(el('li', `${Plan.WHO_NAME[w]} route: ${r.length} point${r.length > 1 ? 's' : ''}, ${ref8(r[0])} to ${ref8(r[r.length - 1])}`));
+  }
   plan.marks.forEach((m, i) => {
     const li = el('li', `${m.label}: ${ref8(m)}`);
     if (!dsShown) {
@@ -852,21 +932,23 @@ function renderPlan() {
   const locked = dsShown;
   for (const id of ['btn-plan-route', 'btn-plan-mark', 'btn-plan-here', 'btn-plan-undo']) ($(id) as HTMLButtonElement).disabled = locked;
   ($('sel-mark') as HTMLSelectElement).disabled = locked;
+  ($('sel-route') as HTMLSelectElement).disabled = locked || planTool === 'route';
   for (const t of document.querySelectorAll<HTMLTextAreaElement>('#plan-answers textarea, #plan-answers2 textarea')) t.readOnly = locked;
   $('btn-plan-route').classList.toggle('active', planTool === 'route');
   $('btn-plan-mark').classList.toggle('active', planTool === 'mark');
-  $('btn-plan-route').textContent = planTool === 'route' ? 'Finish my route' : plan.route.length ? 'Add to my route' : 'Draw my route';
+  const who = ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho;
+  $('btn-plan-route').textContent = planTool === 'route' ? `Finish ${who} route` : plan.routes[who].length ? `Add to ${who} route` : `Draw ${who} route`;
   $('plan-mode').textContent = locked
     ? 'Your plan is fixed while the ground truth is shown. Hide the ground truth to change it.'
     : planTool === 'route'
-      ? 'Tap the map to add each point of your route, in order. Tap "Finish my route" when done.'
+      ? `Tap the map to add each point of the ${Plan.WHO_NAME[who]} route, in order. Tap "Finish ${who} route" when done.`
       : planTool === 'mark'
         ? `Tap the map where your ${($('sel-mark') as HTMLSelectElement).value} is to go.`
         : '';
 }
 
 function addPlanPoint(p: Plan.LatLon) {
-  if (planTool === 'route') Plan.addRoutePoint(plan, p);
+  if (planTool === 'route') Plan.addRoutePoint(plan, ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho, p);
   else if (planTool === 'mark') {
     Plan.addMark(plan, ($('sel-mark') as HTMLSelectElement).value, p);
     planTool = null; // one tap, one position
@@ -896,12 +978,9 @@ function answerBoxes(id: string, questions: string[], answers: string[]) {
 async function showPlanFacts(show: boolean) {
   lastPlanFacts = null;
   $('sc-plan-facts-block').hidden = true;
-  if (!show || !box || (!plan.route.length && !plan.marks.length)) return;
+  if (!show || !box || (!Plan.drawnRoutes(plan).length && !plan.marks.length)) return;
   try {
-    const f = await engine.planFacts({
-      route: plan.route.length >= 2 ? plan.route.map(toLocal) : [],
-      positions: plan.marks.map((m) => ({ kind: m.kind, label: m.label, point: toLocal(m) })),
-    });
+    const f = await engine.planFacts(planInput());
     lastPlanFacts = f;
     const items: HTMLElement[] = [];
     if (f.route.length) items.push(el('li', f.route.join(' ')));
@@ -928,6 +1007,7 @@ $('btn-plan-mark').addEventListener('click', () => {
   renderPlan();
 });
 $('sel-mark').addEventListener('change', () => renderPlan());
+$('sel-route').addEventListener('change', () => renderPlan());
 $('btn-plan-undo').addEventListener('click', () => {
   Plan.undo(plan);
   savePlanNow();
@@ -948,7 +1028,7 @@ $('btn-plan-here').addEventListener('click', async () => {
     status('You are outside the problem area');
     return;
   }
-  if (planTool === 'route') Plan.addRoutePoint(plan, p);
+  if (planTool === 'route') Plan.addRoutePoint(plan, ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho, p);
   else Plan.addMark(plan, ($('sel-mark') as HTMLSelectElement).value, p);
   savePlanNow();
   renderPlan();
