@@ -45,6 +45,10 @@ export interface ProblemKey {
   detail: string;
   /** The "now" the problem was written for (ms since 1970). */
   now: number;
+  /** A full problem, a Quick problem (read and answer) or the Problem of the day. */
+  kind?: 'normal' | 'quick' | 'daily';
+  /** For the Problem of the day: its date and site. */
+  label?: string;
 }
 
 export interface SavedPlan {

@@ -35,6 +35,7 @@ import {
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addMineImages, ensurePointMeasure, ensureSymbol, type Echelon } from './app/symbols';
 import * as Plan from './app/plan';
+import { problemOfTheDay, SITES, ukDay } from './app/sites';
 import { areaPosition, attackByFire, blockGraphic, supportByFire } from './app/graphics';
 import { controlLine, minefield, objective as objectiveGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
@@ -890,16 +891,27 @@ $('sel-time').addEventListener('change', () => {
   }
 });
 
-async function runScenario(seed: number, resume?: Plan.SavedPlan) {
+type ProblemKind = 'normal' | 'quick' | 'daily';
+/** For a Quick problem: two questions and ten minutes (PO, 15 Nov 2026: read and answer only). */
+const QUICK_QUESTIONS = ['What do you decide to do, and why?', 'Give your outline orders to your section commanders.'];
+
+async function runScenario(
+  seed: number,
+  resume?: Plan.SavedPlan,
+  opts: { kind?: ProblemKind; now?: number; label?: string } = {},
+) {
   if (!box) return;
   clearScenario();
   clearCompany();
   $('scenario-block').hidden = false;
   setBusy(true);
   try {
-    const task = ($('sel-task') as HTMLSelectElement).value as TaskType | '';
-    const info = ($('sel-info') as HTMLSelectElement).value as InfoLevel | '';
-    const now = resume?.problem.now ?? problemTime();
+    const kind: ProblemKind = resume?.problem.kind ?? opts.kind ?? 'normal';
+    // The Problem of the day ignores the options, so it is the same for everyone.
+    const task = kind === 'daily' ? '' : (($('sel-task') as HTMLSelectElement).value as TaskType | '');
+    const info = kind === 'daily' ? '' : (($('sel-info') as HTMLSelectElement).value as InfoLevel | '');
+    const now = resume?.problem.now ?? opts.now ?? problemTime();
+    const label = resume?.problem.label ?? opts.label;
     scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
@@ -907,9 +919,17 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
       return;
     }
     $('sc-note').textContent = scenario.featureNote;
-    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now };
+    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label };
     plan = resume ? resume.plan : Plan.emptyPlan();
+    if (kind === 'quick') {
+      scenario.scenario.questions = QUICK_QUESTIONS;
+      scenario.scenario.timeAllowed = '10 minutes.';
+      scenario.scenario.title = `Quick problem: ${scenario.scenario.title}`;
+    } else if (kind === 'daily') scenario.scenario.title = `Problem of the day, ${label}: ${scenario.scenario.title}`;
+    document.body.classList.toggle('quick', kind === 'quick');
+    $('quick-block').hidden = kind !== 'quick';
     showScenario();
+    if (kind === 'quick') answerBoxes('quick-answers', QUICK_QUESTIONS, plan.answers);
     renderPlan();
     if (!resume) Plan.savePlan(problemKey, plan);
     else if (plan.developed) showDeveloped(plan.developed);
@@ -926,7 +946,8 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
   }
 }
 
-$('btn-sc-new').addEventListener('click', () => void runScenario(Math.floor(Math.random() * 1e9)));
+// A new problem of the same kind: another Quick problem after a Quick one.
+$('btn-sc-new').addEventListener('click', () => void (problemKey?.kind === 'quick' ? startQuick() : runScenario(Math.floor(Math.random() * 1e9))));
 // The situation develops from the plan the user marked (PO, 15 Nov 2026): a
 // route is needed; what happens is worked out once along it, then fixed.
 $('btn-sc-develop').addEventListener('click', async () => {
@@ -992,6 +1013,33 @@ $('btn-sc-ds').addEventListener('click', () => {
   setStage('truth');
 });
 $('btn-go-plan').addEventListener('click', () => setStage('plan'));
+$('btn-quick-reveal').addEventListener('click', () => $('btn-sc-ds').click());
+
+/** Quick problem: on one of the well-known sites, chosen at random; read and answer, then reveal. */
+async function startQuick() {
+  const site = SITES[Math.floor(Math.random() * SITES.length)];
+  status(`Quick problem: loading ${site.name}…`);
+  await loadGround(site.lat, site.lon, 'medium');
+  if (!boxCentredOn(site)) return;
+  await runScenario(Math.floor(Math.random() * 1e9), undefined, { kind: 'quick' });
+}
+/** Problem of the day: the same site, problem and time for everyone on a given UK date. */
+async function startDaily() {
+  const day = ukDay();
+  const d = problemOfTheDay(day);
+  const label = `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date(d.now))}, ${d.site.name}`;
+  status(`Problem of the day: loading ${d.site.name}…`);
+  await loadGround(d.site.lat, d.site.lon, 'medium');
+  if (!boxCentredOn(d.site)) return;
+  await runScenario(d.seed, undefined, { kind: 'daily', now: d.now, label });
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-action]'))
+  b.addEventListener('click', () => {
+    openMenu(false);
+    setMode('problem');
+    if (b.dataset.action === 'quick') void startQuick();
+    else void startDaily();
+  });
 
 const toLocal = (p: Plan.LatLon) => latLonToLocal(box!.centre, p.lat, p.lon);
 const ref8 = (p: Plan.LatLon) => gridRef(p.lat, p.lon, 4).ref;

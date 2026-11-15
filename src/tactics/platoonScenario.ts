@@ -85,14 +85,50 @@ export interface ScenarioMarkers {
 export type BgType = 'light' | 'mechanised';
 
 /**
- * Made-up British-style battalions (none is a real regiment), so the problems
- * read naturally without implying any real unit.
+ * Units (PO, 15 Nov 2026). The user's own units are fictional: 1st Battalion,
+ * The Sandhurst Rifles, and The Camberley Yeomanry (for armoured or recce
+ * problems later). Every other unit (flanking battlegroups, tanks, recce) is a
+ * real British Army regiment, from the PO's lists.
  */
-export const BATTALIONS = [
-  { short: '1 SR', full: '1st Battalion, The Sandhurst Rifles' },
-  { short: '2 PENNINE', full: '2nd Battalion, The Pennine Rifles' },
-  { short: '1 MARCHES', full: '1st Battalion, The Marches Regiment' },
-  { short: '3 FENLAND', full: '3rd Battalion, The Fenland Light Infantry' },
+export const OWN_BATTALION = { short: '1 SR', full: '1st Battalion, The Sandhurst Rifles' };
+export const OWN_CAVALRY = { short: 'CY', full: 'The Camberley Yeomanry' };
+/** Real infantry regiments: name and abbreviation (RRF units write FUSILIERS). */
+export const INFANTRY: { name: string; abbr: string }[] = [
+  { name: 'Grenadier Guards', abbr: 'GREN GDS' },
+  { name: 'Coldstream Guards', abbr: 'COLDM GDS' },
+  { name: 'Scots Guards', abbr: 'SG' },
+  { name: 'Irish Guards', abbr: 'IG' },
+  { name: 'Welsh Guards', abbr: 'WG' },
+  { name: 'The Royal Regiment of Scotland', abbr: 'SCOTS' },
+  { name: "The Princess of Wales's Royal Regiment", abbr: 'PWRR' },
+  { name: "The Duke of Lancaster's Regiment", abbr: 'LANCS' },
+  { name: 'The Royal Regiment of Fusiliers', abbr: 'FUSILIERS' },
+  { name: 'The Royal Anglian Regiment', abbr: 'R ANGLIAN' },
+  { name: 'The Royal Yorkshire Regiment', abbr: 'R YORKS' },
+  { name: 'The Mercian Regiment', abbr: 'MERCIAN' },
+  { name: 'The Royal Welsh', abbr: 'R WELSH' },
+  { name: 'The Royal Irish Regiment', abbr: 'R IRISH' },
+  { name: 'The Parachute Regiment', abbr: 'PARA' },
+  { name: 'The Royal Gurkha Rifles', abbr: 'RGR' },
+  { name: 'The Rifles', abbr: 'RIFLES' },
+  { name: 'The Ranger Regiment', abbr: 'RANGER' },
+];
+/** Real cavalry and armoured regiments; `tanks` marks those that crew main battle tanks. */
+export const CAVALRY: { name: string; abbr: string; tanks?: boolean; reserve?: boolean }[] = [
+  { name: 'The Life Guards', abbr: 'LG' },
+  { name: 'The Blues and Royals', abbr: 'RHG/D' },
+  { name: "1st The Queen's Dragoon Guards", abbr: 'QDG' },
+  { name: 'The Royal Scots Dragoon Guards', abbr: 'SCOTS DG' },
+  { name: 'The Royal Dragoon Guards', abbr: 'RDG' },
+  { name: "The Queen's Royal Hussars", abbr: 'QRH', tanks: true },
+  { name: 'The Royal Lancers', abbr: 'RL' },
+  { name: "The King's Royal Hussars", abbr: 'KRH', tanks: true },
+  { name: 'The Light Dragoons', abbr: 'LD' },
+  { name: 'Royal Tank Regiment', abbr: 'RTR', tanks: true },
+  { name: 'The Royal Yeomanry (Reserve)', abbr: 'RY', reserve: true },
+  { name: 'The Royal Wessex Yeomanry (Reserve)', abbr: 'RWxY', reserve: true },
+  { name: "The Queen's Own Yeomanry (Reserve)", abbr: 'QOY', reserve: true },
+  { name: 'The Scottish and North Irish Yeomanry (Reserve)', abbr: 'SNIY', reserve: true },
 ];
 const OBJ_NAMES = ['HAWK', 'FALCON', 'KESTREL', 'MERLIN', 'HARRIER', 'OSPREY'];
 /**
@@ -381,8 +417,10 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const r2 = rng(input.seed ^ 0x5eed2);
   const pick2 = <T>(xs: T[]) => xs[Math.floor(r2() * xs.length)];
   const bgType: BgType = r2() < 0.5 ? 'light' : 'mechanised';
-  const bn = pick2(BATTALIONS);
-  const neighbour = pick2(BATTALIONS.filter((b) => b !== bn));
+  const bn = OWN_BATTALION;
+  const nb = pick2(INFANTRY);
+  const neighbour = { short: `1 ${nb.abbr}`, full: `1st Battalion, ${nb.name}` };
+  const tankRegt = pick2(CAVALRY.filter((c) => c.tanks));
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
   const plName = `PL ${pick2(PL_NAMES)}`;
   // Your own objective gets a codename too (PO, 15 Nov 2026): "OBJ KESTREL (the track junction area at …)".
@@ -716,7 +754,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       detail:
         (bgType === 'light'
           ? `Light role infantry: three rifle companies on foot, with mortars, anti-tank and reconnaissance platoons. `
-          : `Mechanised infantry in Boxer, with a squadron of Challenger 3 tanks, mortars and engineers. `) +
+          : `Mechanised infantry in Boxer, with a squadron of Challenger 3 tanks from ${/^(The|1st)\b/.test(tankRegt.name) ? '' : 'the '}${tankRegt.name} (${tankRegt.abbr}), mortars and engineers. `) +
         `Mission: ${bg} is to seize ${bgObjName} (${ref(bgObjective.point)}${bgObjOnMap ? '' : `, about ${km(bgObjFwd)} from the start line ${dir}, beyond this map`}), in order to allow the brigade to pass ${dir}. ` +
         `CO's intent: break the enemy's forward line quickly on the main route, before they can reinforce or bring artillery onto us; ` +
         `main effort B Coy; A Coy advances on B Coy's ${onePlSideWord} to fix the enemy there; C Coy, the battlegroup reserve, then passes through to ${bgObjName}. ` +

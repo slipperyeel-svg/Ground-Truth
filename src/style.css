@@ -303,3 +303,13 @@ body[data-mode="settings"] [data-modes]:not([data-modes~="settings"]) { display:
 .start-pop .gr { font-size: 19px; margin-right: 24px; }
 .start-pop .detail { margin: 2px 0 8px; }
 .start-pop button { width: 100%; margin-top: 6px; }
+
+/* Quick problem: read and answer only, so no Plan or Develops stage. */
+body.quick #stepbar [data-stage-tab="plan"], body.quick #stepbar [data-stage-tab="develop"] { display: none; }
+body.quick #btn-go-plan { display: none; }
+#quick-answers label { display: block; font-size: 14px; font-weight: 600; margin-top: 12px; }
+#quick-answers textarea {
+  display: block; width: 100%; min-height: 96px; margin-top: 6px; resize: vertical;
+  font: inherit; font-size: 15px; line-height: 1.45; color: var(--ink);
+  border: 1.5px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 10px; background: #fcfcfa;
+}
