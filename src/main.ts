@@ -462,7 +462,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new', 'btn-sc-new']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-start-here', 'btn-start-map', 'btn-go-plan', 'btn-sc-develop', 'btn-sc-ds', 'btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new', 'btn-sc-new']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
@@ -586,6 +586,7 @@ function clearScenario() {
   $('sc-plan-facts-block').hidden = true;
   phase2Shown = false;
   dsShown = false;
+  revealed = false;
   (map.getSource('units') as GeoJSONSource | undefined)?.setData(EMPTY);
   (map.getSource('graphics') as GeoJSONSource | undefined)?.setData(EMPTY);
   $('sc').hidden = true;
@@ -595,11 +596,15 @@ function clearScenario() {
   if (box) (map.getSource('company-zones') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
   (map.getSource('company') as GeoJSONSource | undefined)?.setData(EMPTY);
   (map.getSource('scenario') as GeoJSONSource | undefined)?.setData(EMPTY);
+  setStage('start');
 }
 
 // ---------- the situation map: APP-6 symbols and tactical graphics ----------
 let phase2Shown = false;
+/** The ground truth is drawn on the map (Problem page after the reveal, or the DS page). */
 let dsShown = false;
+/** The user has revealed the ground truth on the Problem page: the plan is then fixed. */
+let revealed = false;
 
 type P = { x: number; y: number };
 function unitFeature(p: P, spec: Parameters<typeof ensureSymbol>[1], text: { designation?: string; higher?: string } = {}, label = '') {
@@ -726,12 +731,12 @@ function showScenario() {
   $('sc').hidden = false;
 }
 
+/** Draw (or remove) the ground truth on the map: the whole enemy, fire, dead ground, mines, the obvious route. */
 function showScenarioDS(show: boolean) {
   const v = scenario;
   if (!box || !v?.company || !v.scenario) return;
   const c = v.company;
   $('sc-ds').hidden = !show;
-  ($('btn-sc-ds') as HTMLButtonElement).textContent = show ? 'Hide the ground truth' : 'Reveal the ground truth';
   (map.getSource('company-zones') as ImageSource).updateImage({
     url: show ? companyZonesImage(c.maskWidth!, c.maskHeight!, c.killZone!, c.deadGround!, c.mines ?? null) : BLANK,
     coordinates: boxCorners(box),
@@ -747,6 +752,77 @@ function showScenarioDS(show: boolean) {
   renderSituation();
   renderPlan();
   void showPlanFacts(show);
+}
+
+// ---------- modes: Problem, DS, Developer (PO, 15 Nov 2026) ----------
+type Mode = 'problem' | 'ds' | 'dev';
+let mode: Mode = 'problem';
+type Stage = 'start' | 'read' | 'plan' | 'develop' | 'truth';
+let stage: Stage = 'start';
+
+/** The Developer page appears only with ?dev=1 (then remembered on this phone). */
+const devAllowed = (() => {
+  try {
+    if (new URLSearchParams(location.search).get('dev') === '1') localStorage.setItem('ground-truth.dev', '1');
+    return localStorage.getItem('ground-truth.dev') === '1';
+  } catch {
+    return new URLSearchParams(location.search).get('dev') === '1';
+  }
+})();
+document.querySelector<HTMLButtonElement>('[data-mode-tab="dev"]')!.hidden = !devAllowed;
+
+function setMode(m: Mode) {
+  mode = m;
+  document.body.dataset.mode = m;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) b.classList.toggle('active', b.dataset.modeTab === m);
+  planTool = null;
+  // The ground truth shows on the DS page at any time, and on the Problem page once revealed.
+  if (scenario?.scenario) showScenarioDS(m === 'ds' || (m === 'problem' && revealed));
+  if (m === 'ds') void fillDsPage();
+  renderPlan();
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) b.addEventListener('click', () => setMode(b.dataset.modeTab as Mode));
+
+/** Which stages of the Problem page can be opened: each once it has been reached. */
+function updateStepbar() {
+  const has = !!scenario?.scenario;
+  const open: Record<Stage, boolean> = { start: true, read: has, plan: has, develop: has && !!plan.developed, truth: has && revealed };
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-stage-tab]')) {
+    const st = b.dataset.stageTab as Stage;
+    b.disabled = !open[st];
+    b.classList.toggle('current', st === stage);
+  }
+}
+function setStage(st: Stage) {
+  stage = st;
+  $('panel').dataset.stage = st;
+  for (const el of document.querySelectorAll<HTMLElement>('.stage')) el.classList.toggle('current', el.dataset.stage === st);
+  if (st !== 'plan') planTool = null;
+  updateStepbar();
+  renderPlan();
+  $('panel').scrollTop = 0;
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-stage-tab]')) b.addEventListener('click', () => setStage(b.dataset.stageTab as Stage));
+
+/** The DS page: the full enemy layout and the student's plan against it, for the problem on this phone. */
+async function fillDsPage() {
+  const s = scenario?.scenario;
+  $('ds-empty').hidden = !!s;
+  $('ds-page').hidden = !s;
+  if (!s) return;
+  $('ds-title').textContent = s.title;
+  $('ds-summary').textContent = `Information given to the student: ${s.info}. ${s.time}`;
+  fillList('ds-list', [...s.ds, `Data: ${s.dataNote}`]);
+  if (!Plan.drawnRoutes(plan).length && !plan.marks.length) {
+    fillList('ds-plan', ['No plan marked yet.']);
+    return;
+  }
+  try {
+    const f = await engine.planFacts(planInput());
+    fillList('ds-plan', [...f.route, ...f.positions.map((p) => `${p.label}: ${p.facts.join(' ')}`)]);
+  } catch (err) {
+    fillList('ds-plan', [`Could not work out facts for the plan: ${(err as Error).message}`]);
+  }
 }
 
 async function runScenario(seed: number, resume?: Plan.SavedPlan) {
@@ -772,10 +848,12 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
     renderPlan();
     if (!resume) Plan.savePlan(problemKey, plan);
     else if (plan.developed) showDeveloped(plan.developed);
+    revealed = !!plan.revealed;
     renderSituation();
     zoomToSituation();
     status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
-    $('scenario-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setStage(revealed ? 'truth' : plan.developed ? 'develop' : resume ? 'plan' : 'read');
+    setMode(mode);
   } catch (err) {
     status(`Could not set a problem: ${(err as Error).message}`);
   } finally {
@@ -789,12 +867,11 @@ $('btn-sc-new').addEventListener('click', () => void runScenario(Math.floor(Math
 $('btn-sc-develop').addEventListener('click', async () => {
   const s = scenario?.scenario;
   if (!s || !box) return;
-  if (plan.developed) return showDeveloped(plan.developed);
+  if (plan.developed) return setStage('develop');
   const missing = Plan.missingRoutes(plan);
   if (missing.length) {
     $('plan-mode').textContent = `Draw a route for ${missing.map((w) => Plan.WHO_NAME[w]).join(', ')} first: the situation develops from the routes you choose.`;
     status('Mark every route before the situation develops');
-    $('plan-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
   planTool = null;
@@ -808,6 +885,7 @@ $('btn-sc-develop').addEventListener('click', async () => {
     plan.developed = d;
     savePlanNow();
     showDeveloped(d);
+    setStage('develop');
     status('The situation develops');
   } catch (err) {
     status(`Could not develop the situation: ${(err as Error).message}`);
@@ -830,9 +908,17 @@ function showDeveloped(d: Plan.PlanState['developed'] & object) {
   phase2Shown = true;
   renderSituation();
   renderPlan();
-  $('sc-phase2').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-$('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden === true));
+// Reveal the ground truth: shown from now on, and the plan is fixed (decide first, then see).
+$('btn-sc-ds').addEventListener('click', () => {
+  revealed = true;
+  plan.revealed = true;
+  planTool = null;
+  savePlanNow();
+  showScenarioDS(true);
+  setStage('truth');
+});
+$('btn-go-plan').addEventListener('click', () => setStage('plan'));
 
 const toLocal = (p: Plan.LatLon) => latLonToLocal(box!.centre, p.lat, p.lon);
 const ref8 = (p: Plan.LatLon) => gridRef(p.lat, p.lon, 4).ref;
@@ -916,7 +1002,7 @@ function renderPlan() {
   }
   plan.marks.forEach((m, i) => {
     const li = el('li', `${m.label}: ${ref8(m)}`);
-    if (!dsShown) {
+    if (!revealed) {
       const del = el('button', 'Remove', 'del') as HTMLButtonElement;
       del.addEventListener('click', () => {
         Plan.removeMark(plan, i);
@@ -929,7 +1015,7 @@ function renderPlan() {
   });
   $('plan-list').replaceChildren(...items);
 
-  const locked = dsShown;
+  const locked = revealed;
   for (const id of ['btn-plan-route', 'btn-plan-mark', 'btn-plan-here', 'btn-plan-undo']) ($(id) as HTMLButtonElement).disabled = locked;
   ($('sel-mark') as HTMLSelectElement).disabled = locked;
   ($('sel-route') as HTMLSelectElement).disabled = locked || planTool === 'route';
@@ -939,7 +1025,7 @@ function renderPlan() {
   const who = ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho;
   $('btn-plan-route').textContent = planTool === 'route' ? `Finish ${who} route` : plan.routes[who].length ? `Add to ${who} route` : `Draw ${who} route`;
   $('plan-mode').textContent = locked
-    ? 'Your plan is fixed while the ground truth is shown. Hide the ground truth to change it.'
+    ? 'Your plan is fixed now the ground truth has been revealed.'
     : planTool === 'route'
       ? `Tap the map to add each point of the ${Plan.WHO_NAME[who]} route, in order. Tap "Finish ${who} route" when done.`
       : planTool === 'mark'
@@ -1064,7 +1150,7 @@ $('btn-plan-export').addEventListener('click', async () => {
     questions2: phase2Shown ? s.phase2.questions : null,
     plan,
     ref: ref8,
-    facts: dsShown ? lastPlanFacts : null,
+    facts: revealed ? lastPlanFacts : null,
     when,
   });
   const stamp = when.toISOString().slice(0, 16).replace(/[-:T]/g, '');
@@ -1431,8 +1517,9 @@ map.on('click', (e: MapMouseEvent) => {
   const { lat, lng } = e.lngLat;
   tapTimer = window.setTimeout(() => {
     tapTimer = undefined;
-    if (planTool && scenario?.scenario && !dsShown) addPlanPoint({ lat, lon: lng });
-    else void selectPoint(lat, lng);
+    if (planTool && scenario?.scenario && !revealed && mode === 'problem') addPlanPoint({ lat, lon: lng });
+    // Selecting a point: on the Start stage of the Problem page, or anywhere on the Developer page.
+    else if (mode === 'dev' || (mode === 'problem' && stage === 'start')) void selectPoint(lat, lng);
   }, 300);
 });
 
@@ -1529,6 +1616,29 @@ $('btn-pt-problem').addEventListener('click', async () => {
   await runScenario(Math.floor(Math.random() * 1e9));
 });
 
+// ---------- Problem page: Start ----------
+$('btn-start-here').addEventListener('click', async () => {
+  status('Finding your position…');
+  try {
+    await startWatching();
+  } catch (err) {
+    status((err as Error).message);
+    return;
+  }
+  if (!myFix) return;
+  const p = { lat: myFix.lat, lon: myFix.lon };
+  if (!boxCentredOn(p) || !groundFitsCompany()) {
+    await loadGround(p.lat, p.lon, 'medium');
+    if (!boxCentredOn(p)) return;
+  }
+  await runScenario(Math.floor(Math.random() * 1e9));
+});
+$('btn-start-map').addEventListener('click', () => {
+  $('start-hint').textContent = 'Tap the map where the problem should be, then press "Set a problem here".';
+  status('Tap the map to choose the place');
+});
+$('btn-truth-export').addEventListener('click', () => $('btn-plan-export').click());
+
 $('btn-vs-me').addEventListener('click', async () => {
   if (!box) return;
   try {
@@ -1584,3 +1694,7 @@ navigator.permissions
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   navigator.serviceWorker.register('./sw.js').catch(() => undefined);
 }
+
+// Start on the Problem page, at the Start stage.
+setMode('problem');
+setStage('start');

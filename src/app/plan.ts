@@ -31,6 +31,8 @@ export interface PlanState {
   history: ('mark' | RouteWho)[];
   /** The situation as it developed on the route marked (worked out once, then fixed). */
   developed?: DevelopedSituation;
+  /** The ground truth has been revealed: the plan is then fixed. */
+  revealed?: boolean;
 }
 
 /** Enough to set exactly the same problem again (same ground, enemy, task and times). */

@@ -20,91 +20,82 @@
       <span id="status" role="status" aria-live="polite">Ready</span>
     </header>
 
-    <section id="panel" aria-label="Controls">
-      <div class="row selects">
-        <label>Ground detail
-          <select id="sel-detail">
-            <option value="medium" selected>LIDAR 5 m, 8 km box (England)</option>
-            <option value="fine">Fine: LIDAR 2 m, 2 km box (England)</option>
-            <option value="standard">Standard: 30 m data, 8 km box</option>
-          </select>
-        </label>
-      </div>
-      <div class="row buttons">
-        <button id="btn-here" class="primary">Load ground at my position</button>
-        <button id="btn-load-point">Load at selected point</button>
-        <button id="btn-resume" hidden>Resume my last problem</button>
-      </div>
+    <nav id="modes" aria-label="Mode">
+      <button data-mode-tab="problem" class="active">Problem</button>
+      <button data-mode-tab="ds">DS</button>
+      <button data-mode-tab="dev" hidden>Developer</button>
+    </nav>
 
+
+    <section id="panel" aria-label="Controls">
+      <!-- ================= PROBLEM page: one journey in five stages ================= -->
+      <div data-modes="problem">
+        <ol id="stepbar" aria-label="Stages">
+          <li><button data-stage-tab="start">Start</button></li>
+          <li><button data-stage-tab="read" disabled>Read</button></li>
+          <li><button data-stage-tab="plan" disabled>Plan</button></li>
+          <li><button data-stage-tab="develop" disabled>Develops</button></li>
+          <li><button data-stage-tab="truth" disabled>Truth</button></li>
+        </ol>
+
+        <div class="stage" data-stage="start">
+          <div class="block">
+            <div class="label">Set a problem</div>
+            <div class="row buttons">
+              <button id="btn-start-here" class="primary">Problem where I stand</button>
+              <button id="btn-start-map">Problem at a point on the map</button>
+              <button id="btn-resume" hidden>Resume my last problem</button>
+            </div>
+            <p id="start-hint" class="detail"></p>
+            <details class="options">
+              <summary>Problem options</summary>
+              <div class="row selects">
+                <label>Task
+                  <select id="sel-task">
+                    <option value="" selected>Generator decides</option>
+                    <option value="secure">Secure ground beyond</option>
+                    <option value="neutralise">Neutralise enemy in an area</option>
+                    <option value="findFix">Find and fix</option>
+                    <option value="screen">Screen a flank</option>
+                  </select>
+                </label>
+                <label>Information
+                  <select id="sel-info">
+                    <option value="" selected>Generator decides</option>
+                    <option value="rich">Rich</option>
+                    <option value="partial">Partial</option>
+                    <option value="poor">Poor</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
       <div id="position" class="block">
         <div class="label">You</div>
         <div id="pos-ref" class="gr">—</div>
         <div id="pos-detail" class="detail"></div>
       </div>
+        </div>
+      </div>
 
-      <div id="point-block" class="block" hidden>
+      <!-- Selected point: in the Problem page only "Set a problem here"; the rest are developer tools. -->
+      <div id="point-block" class="block" data-modes="problem dev" hidden>
         <div class="label">Selected point</div>
         <div id="pt-ref" class="gr"></div>
         <div id="pt-detail" class="detail"></div>
         <div class="row buttons">
-          <button id="btn-pt-problem" class="primary">Set a problem here</button>
-          <button id="btn-pt-company">Enemy company here</button>
-          <button id="btn-pt-section">Enemy section here</button>
-          <button id="btn-pt-vs">Viewshed from here</button>
+          <button id="btn-pt-problem" class="primary" data-modes="problem dev">Set a problem here</button>
+          <button id="btn-pt-company" data-modes="dev">Enemy company here</button>
+          <button id="btn-pt-section" data-modes="dev">Enemy section here</button>
+          <button id="btn-pt-vs" data-modes="dev">Viewshed from here</button>
           <button id="btn-pt-clear">Clear</button>
         </div>
       </div>
 
-      <div id="ground-info" class="block" hidden>
-        <div class="label">Ground</div>
-        <div id="ground-class" class="value"></div>
-        <div id="ground-detail" class="detail"></div>
-        <div id="data-source" class="source"></div>
-        <div class="row buttons feat-row">
-          <button id="btn-features">Show features</button>
-        </div>
-        <div id="feat-legend" class="legend wrap" hidden>
-          <span><span class="sw" style="background:rgb(46,125,50)"></span> wood</span>
-          <span><span class="sw" style="background:rgb(150,160,60)"></span> scrub</span>
-          <span><span class="sw" style="background:rgb(30,110,220)"></span> water</span>
-          <span><span class="sw" style="background:rgb(90,160,200)"></span> marsh</span>
-          <span><span class="sw" style="background:rgb(120,120,120)"></span> built-up</span>
-          <span><span class="sw" style="background:rgb(60,60,60)"></span> building</span>
-          <span><span class="sw" style="background:rgb(220,90,20)"></span> main road</span>
-          <span><span class="sw" style="background:rgb(235,190,30)"></span> minor road</span>
-          <span><span class="sw" style="background:rgb(140,90,40)"></span> track</span>
-          <span><span class="sw" style="background:rgb(200,0,200)"></span> path</span>
-          <span><span class="sw" style="background:rgb(20,90,30)"></span> hedge</span>
-          <span><span class="sw" style="background:rgb(20,20,20)"></span> railway</span>
-        </div>
-        <div id="feat-note" class="source"></div>
-      </div>
-
-      <div id="scenario-block" class="block" hidden>
-        <div class="label">Tactical problem</div>
-        <div class="row selects">
-          <label>Task
-            <select id="sel-task">
-              <option value="" selected>Generator decides</option>
-              <option value="secure">Secure ground beyond</option>
-              <option value="neutralise">Neutralise enemy in an area</option>
-              <option value="findFix">Find and fix</option>
-              <option value="screen">Screen a flank</option>
-            </select>
-          </label>
-          <label>Information
-            <select id="sel-info">
-              <option value="" selected>Generator decides</option>
-              <option value="rich">Rich</option>
-              <option value="partial">Partial</option>
-              <option value="poor">Poor</option>
-            </select>
-          </label>
-        </div>
-        <div class="row buttons">
-          <button id="btn-sc-new">New problem</button>
-        </div>
+      <div id="scenario-block" data-modes="problem" hidden>
         <div id="sc" hidden>
+          <div class="stage" data-stage="read">
+            <div class="block">
           <h2 id="sc-title"></h2>
           <p id="sc-you"></p>
           <table id="sc-force" class="force"></table>
@@ -128,6 +119,14 @@
           <h3>Requirement</h3>
           <ol id="sc-q"></ol>
           <p id="sc-allowed" class="detail"></p>
+            <div class="row buttons">
+              <button id="btn-go-plan" class="primary">Make my plan</button>
+              <button id="btn-sc-new">New problem</button>
+            </div>
+            </div>
+          </div>
+          <div class="stage" data-stage="plan">
+            <div class="block">
           <div id="plan-block">
             <h3>Your plan</h3>
             <p class="detail">Mark your plan on the map: tap to place it, or walk to the spot and mark where you stand. It is kept on this phone. Draw a route for each section and for Platoon HQ: the situation develops from the routes you mark.</p>
@@ -172,8 +171,11 @@
           </div>
           <div class="row buttons">
             <button id="btn-sc-develop" class="primary">The situation develops</button>
-            <button id="btn-sc-ds">Reveal the ground truth</button>
           </div>
+            </div>
+          </div>
+          <div class="stage" data-stage="develop">
+            <div class="block">
           <div id="sc-phase2" hidden>
             <h3>The situation develops</h3>
             <p id="sc-p2time"></p>
@@ -181,6 +183,14 @@
             <ol id="sc-p2q"></ol>
             <div id="plan-answers2"></div>
           </div>
+          <p class="detail">Change your routes and positions on the Plan stage if you would now act differently, and answer below.</p>
+          <div class="row buttons">
+            <button id="btn-sc-ds" class="primary">Reveal the ground truth</button>
+          </div>
+            </div>
+          </div>
+          <div class="stage" data-stage="truth">
+            <div class="block">
           <div id="sc-ds" hidden>
             <h3>Ground truth (computed facts)</h3>
             <p class="detail">There is no school solution. These are the facts of the ground and the enemy; judge your own decision and orders against them.</p>
@@ -198,11 +208,83 @@
               <ul id="sc-plan-facts"></ul>
             </div>
           </div>
+          <div class="row buttons">
+            <button id="btn-truth-export">Save or share my plan</button>
+          </div>
           <p id="sc-data" class="source"></p>
+            </div>
+          </div>
         </div>
         <div id="sc-note" class="source"></div>
       </div>
 
+      <!-- ================= DS page: the full picture for the problem on this phone ================= -->
+      <div data-modes="ds">
+        <div class="block">
+          <div class="label">Directing staff</div>
+          <p id="ds-empty" class="detail">No problem is set on this phone yet. Set one on the Problem page; the full enemy layout and the ground truth then appear here at any time, without locking the plan.</p>
+          <div id="ds-page" hidden>
+            <h2 id="ds-title"></h2>
+            <p id="ds-summary" class="detail"></p>
+            <div class="legend wrap">
+              <span><span class="sw" style="background:#c00"></span> enemy position</span>
+              <span><span class="sw" style="background:#fff;border:2px dashed #c00"></span> dummy</span>
+              <span><span class="sw" style="background:rgba(200,60,0,0.7)"></span> interlocking fire</span>
+              <span><span class="sw" style="background:rgba(40,90,220,0.55)"></span> dead ground</span>
+              <span><span class="sw" style="background:#c62828"></span> obvious route</span>
+            </div>
+            <h3>The enemy as laid out</h3>
+            <ul id="ds-list"></ul>
+            <h3>The student's plan</h3>
+            <ul id="ds-plan"></ul>
+            <p class="detail">Sharing a problem with students by a code is to come.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= DEVELOPER page: engine tools ================= -->
+      <div data-modes="dev">
+      <div class="row selects">
+        <label>Ground detail
+          <select id="sel-detail">
+            <option value="medium" selected>LIDAR 5 m, 8 km box (England)</option>
+            <option value="fine">Fine: LIDAR 2 m, 2 km box (England)</option>
+            <option value="standard">Standard: 30 m data, 8 km box</option>
+          </select>
+        </label>
+      </div>
+      <div class="row buttons">
+        <button id="btn-here" class="primary">Load ground at my position</button>
+        <button id="btn-load-point">Load at selected point</button>
+      </div>
+      </div>
+      <div data-modes="dev">
+      <div id="ground-info" class="block" hidden>
+        <div class="label">Ground</div>
+        <div id="ground-class" class="value"></div>
+        <div id="ground-detail" class="detail"></div>
+        <div id="data-source" class="source"></div>
+        <div class="row buttons feat-row">
+          <button id="btn-features">Show features</button>
+        </div>
+        <div id="feat-legend" class="legend wrap" hidden>
+          <span><span class="sw" style="background:rgb(46,125,50)"></span> wood</span>
+          <span><span class="sw" style="background:rgb(150,160,60)"></span> scrub</span>
+          <span><span class="sw" style="background:rgb(30,110,220)"></span> water</span>
+          <span><span class="sw" style="background:rgb(90,160,200)"></span> marsh</span>
+          <span><span class="sw" style="background:rgb(120,120,120)"></span> built-up</span>
+          <span><span class="sw" style="background:rgb(60,60,60)"></span> building</span>
+          <span><span class="sw" style="background:rgb(220,90,20)"></span> main road</span>
+          <span><span class="sw" style="background:rgb(235,190,30)"></span> minor road</span>
+          <span><span class="sw" style="background:rgb(140,90,40)"></span> track</span>
+          <span><span class="sw" style="background:rgb(200,0,200)"></span> path</span>
+          <span><span class="sw" style="background:rgb(20,90,30)"></span> hedge</span>
+          <span><span class="sw" style="background:rgb(20,20,20)"></span> railway</span>
+        </div>
+        <div id="feat-note" class="source"></div>
+      </div>
+      </div>
+      <div data-modes="dev">
       <div id="company-block" class="block" hidden>
         <div class="label">Enemy company (DS view)</div>
         <label class="check"><input type="checkbox" id="co-auto" checked /> Let the generator decide the optional elements</label>
@@ -233,7 +315,8 @@
         </div>
         <div id="co-note" class="source"></div>
       </div>
-
+      </div>
+      <div data-modes="dev">
       <div id="section-block" class="block" hidden>
         <div class="label">Enemy section problem</div>
         <div class="row selects">
@@ -281,7 +364,8 @@
         </div>
         <div id="sec-note" class="source"></div>
       </div>
-
+      </div>
+      <div data-modes="dev">
       <div id="problem-block" class="block" hidden>
         <div class="label">Tactical problem</div>
         <div class="row buttons">
@@ -308,7 +392,8 @@
         <div id="pr-features" class="source"></div>
         <details id="pr-log" hidden><summary>Why this ground and direction</summary><ul id="pr-log-list"></ul></details>
       </div>
-
+      </div>
+      <div data-modes="dev">
       <div id="vs-block" class="block" hidden>
         <div class="label">Viewshed — select a point on the map, or</div>
         <div class="row">
@@ -343,7 +428,9 @@
         <div id="vs-info" class="detail"></div>
         <div class="legend"><span class="sw seen"></span> can be seen <span class="sw dead"></span> dead ground</div>
       </div>
+      </div>
 
+      <!-- Map settings, on every page -->
       <div class="row toggles">
         <label><input type="checkbox" id="tg-hillshade" checked /> Hillshade</label>
         <label><input type="checkbox" id="tg-contours" checked /> Contours</label>
