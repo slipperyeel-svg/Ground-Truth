@@ -23,7 +23,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 | Milestone | State |
 |---|---|
 | **M1 – Terrain engine** | Done. Unit tests pass, including against real Terrarium tiles (`NETWORK=1`), 14 Nov 2026. |
-| **M2 – Map view** | Done, with OS base maps. Live at https://slipperyeel-svg.github.io/Ground-Truth/ ; real OS Explorer tiles and elevation loaded there on 14 Nov 2026. Still to check: blue grid lines exactly on the OS grid, and the OpenStreetMap layer. |
+| **M2 – Map view** | Done, with OS base maps. Live at https://slipperyeel-svg.github.io/Ground-Truth/ ; real OS Explorer tiles and elevation loaded there on 14 Nov 2026. Default base map is now the OS open map (natively Web Mercator, no warp). The Explorer grid-alignment check only matters if Explorer is used (optional, premium); not a priority (PO, 15 Nov 2026). |
 | **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation. OSM features load and display correctly on the PO's device (Larkhill/Amesbury, 14 Nov 2026); Overpass is still unreachable from the cloud workspace. Problems paused at the PO's request. Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
 | M4 – Templates B and C, ground classification choosing between them, access-safe stands from OSM paths | Not started. |
 | M5 – DS feedback, answer capture, then LLM prose and critique from computed facts only | Not started. |
@@ -37,7 +37,7 @@ The earlier work was done without internet access to the data servers. Before an
 2. `npm install`, then `npm test`, `npm run typecheck`, and `NETWORK=1 npm test` (loads real Terrarium tiles for Salisbury Plain).
 3. Load real ground with `npm run build && npx vite preview`, then open `?lat=51.2&lon=-1.85&autoload=1`. If Chrome is available, take headless screenshots (see section 6) and check:
    - Terrarium tiles decode to plausible heights (Salisbury Plain about 100–200 m).
-   - **OS Explorer alignment:** the app's blue 1 km grid lines must sit exactly on the OS map's own grid lines. This is the acceptance test for the BNG→Web Mercator warp in `src/geo/osTiles.ts`.
+   - **OS Explorer alignment** (only if Explorer is in use; it is no longer the default): the app's blue 1 km grid lines should sit on the OS map's own grid lines. This tests the BNG→Web Mercator warp in `src/geo/osTiles.ts`.
    - OS Outdoor and OpenStreetMap layers load; attribution shows.
    - CORS works for the Terrarium tiles from a browser (`fetch(..., {mode: 'cors'})` in `src/terrain/tiles-browser.ts`).
 4. Fix anything found, then report to the PO in plain English.
