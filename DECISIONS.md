@@ -112,3 +112,10 @@ The engine now reads the features of the ground as well as its shape, finds the 
 68. **Viewshed and line of sight agree.** Both use the same rules (`Obstacles` in `src/terrain/viewshed.ts`, built in `src/features/obstacles.ts`); exposure checks use them too. The viewshed screen has a tick box (on by default) to compare with bare ground; features are fetched automatically the first time.
 69. **Not yet applied to the problem engine** (enemy OPs, Template A), since problems are paused. Pass `obstacles` in their view options when problems resume.
 70. **First real test (Larkhill, SU 1433 4300, 14 Nov 2026):** with obstacles the observer sees 9% of the ground within 3 km instead of 18% on bare ground, because OS shows a wood 140 m to the north. Hedges from OSM could not be tested from the cloud workspace.
+
+## Map interaction and point selection (15 Nov 2026)
+
+71. **Standard map gestures, all kept** (MapLibre defaults): pinch or spread to zoom, double-tap to zoom in, two-finger tap to zoom out, double-tap-and-drag for quick zoom, one-finger drag to move, two-finger twist to rotate; scroll wheel, double-click and shift-drag box zoom on a computer.
+72. **A single tap no longer runs a viewshed.** It selects a point instead: a marker, its 8-figure grid reference, its height (inside the loaded box), and, if your position is known, distance and grid bearing from you in mils (6,400) and degrees. "Viewshed from here" and "Clear" act on it. Grid bearing and distance use BNG in Great Britain, UTM elsewhere.
+73. **Double tap must not select.** On touchscreens the map reports only the first tap of a double tap, so a tap is held for 300 ms and dropped if the map starts zooming in that time.
+74. **Crosshair (⌖ button under the zoom buttons)** for precise selection with a finger: a fixed mark at the map centre; move the map under it and press "Select crosshair point".

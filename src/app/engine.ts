@@ -28,6 +28,7 @@ export class Engine {
       else if (msg.type === 'viewshed') p.resolve(msg.result);
       else if (msg.type === 'problem') p.resolve(msg.result);
       else if (msg.type === 'features') p.resolve(msg.result);
+      else if (msg.type === 'height') p.resolve(msg.result);
     };
   }
 
@@ -49,6 +50,11 @@ export class Engine {
       { type: 'load', lat, lon, sizeM: opts.sizeM ?? 4000, cellM: opts.cellM ?? 10, demo: opts.demo },
       onProgress,
     );
+  }
+
+  /** Ground height at a point (local metres), or null outside the loaded box. */
+  height(x: number, y: number): Promise<number | null> {
+    return this.request<number | null>({ type: 'height', x, y });
   }
 
   /** Fetch the map features for the loaded ground and draw them. */

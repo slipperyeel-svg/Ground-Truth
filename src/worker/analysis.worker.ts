@@ -170,6 +170,10 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         },
         [mask.buffer],
       );
+    } else if (req.type === 'height') {
+      const half = grid ? (grid.width * grid.cellM) / 2 : 0;
+      const inside = !!grid && Math.abs(req.x) <= half && Math.abs(req.y) <= half;
+      post({ type: 'height', id: req.id, result: inside ? elevationAtPoint(grid!, { x: req.x, y: req.y }) : null });
     } else if (req.type === 'features') {
       if (!grid) throw new Error('No ground loaded yet');
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });

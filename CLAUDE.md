@@ -101,7 +101,7 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/tactics/enemyOps.ts` | Likely enemy OPs: best viewpoints on the enemy side |
 | `src/tactics/templateA.ts` | Template A: OP candidates, gun areas, line of communication, dilemma test, quality gate |
 | `src/tactics/problem.ts` | Tries each enemy direction, ranks passes, writes the problem and DS notes |
-| `src/main.ts`, `index.html`, `src/style.css` | The map screen (phone-first, high contrast), with "Set a problem" |
+| `src/main.ts`, `index.html`, `src/style.css` | The map screen (phone-first, high contrast): point selection by tap or crosshair, viewshed, features, "Set a problem" |
 | `public/sw.js`, `public/manifest.webmanifest` | Offline cache and installable-app manifest |
 | `DECISIONS.md` | Every significant choice so far, with reasons. **Read it before changing behaviour.** |
 

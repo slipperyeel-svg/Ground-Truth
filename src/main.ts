@@ -29,7 +29,7 @@ import {
   viewshedImage,
   type BoxGeo,
 } from './app/overlays';
-import { gridRef, inGreatBritain } from './geo/gridref';
+import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
@@ -458,6 +458,7 @@ async function runViewshed(x: number, y: number) {
   lastObserver = { x, y };
   const ll = localToLatLon(box.centre, x, y);
   (map.getSource('tap') as GeoJSONSource).setData(pointGeoJSON(ll.lon, ll.lat));
+  selected = ll;
   status('Computing viewshed…');
   try {
     const useObstacles = ($('tg-obstacles') as HTMLInputElement).checked;
@@ -476,14 +477,125 @@ async function runViewshed(x: number, y: number) {
   }
 }
 
-map.on('click', (e: MapMouseEvent) => {
-  if (!box) return;
-  const p = latLonToLocal(box.centre, e.lngLat.lat, e.lngLat.lng);
-  if (Math.abs(p.x) > box.halfM || Math.abs(p.y) > box.halfM) {
-    status('Tap inside the loaded box (dashed line)');
-    return;
+// ---------- selecting a point ----------
+let selected: { lat: number; lon: number } | null = null;
+
+/** Grid bearing (degrees) and distance (m) from a to b, in BNG in Great Britain, else UTM. */
+function gridBearingDistance(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  let ea: { e: number; n: number };
+  let eb: { e: number; n: number };
+  if (inGreatBritain(a.lat, a.lon) && inGreatBritain(b.lat, b.lon)) {
+    const p = toBNG(a.lat, a.lon);
+    const q = toBNG(b.lat, b.lon);
+    ea = { e: p.easting, n: p.northing };
+    eb = { e: q.easting, n: q.northing };
+  } else {
+    const p = toUTM(a.lat, a.lon);
+    const q = toUTM(b.lat, b.lon);
+    ea = { e: p.easting, n: p.northing };
+    eb = { e: q.easting, n: q.northing };
   }
+  const de = eb.e - ea.e;
+  const dn = eb.n - ea.n;
+  return { bearingDeg: ((Math.atan2(de, dn) * 180) / Math.PI + 360) % 360, distanceM: Math.hypot(de, dn) };
+}
+
+async function selectPoint(lat: number, lon: number) {
+  selected = { lat, lon };
+  (map.getSource('tap') as GeoJSONSource).setData(pointGeoJSON(lon, lat));
+  const ref = gridRef(lat, lon, 4);
+  $('pt-ref').textContent = ref.ref;
+  const parts: string[] = [];
+  let inBox = false;
+  if (box) {
+    const p = latLonToLocal(box.centre, lat, lon);
+    inBox = Math.abs(p.x) <= box.halfM && Math.abs(p.y) <= box.halfM;
+    if (inBox) {
+      const h = await engine.height(p.x, p.y);
+      if (h !== null) parts.push(`Height ${Math.round(h)} m`);
+    }
+  }
+  if (myFix) {
+    const { bearingDeg, distanceM } = gridBearingDistance(myFix, selected);
+    const mils = Math.round((bearingDeg * 6400) / 360) % 6400;
+    const dist = distanceM >= 1000 ? `${(distanceM / 1000).toFixed(2)} km` : `${Math.round(distanceM)} m`;
+    parts.push(`${dist} from you, grid bearing ${String(mils).padStart(4, '0')} mils (${Math.round(bearingDeg)}°)`);
+  }
+  if (!box) parts.push('Load ground to see its height and run a viewshed.');
+  else if (!inBox) parts.push('Outside the loaded box: no height or viewshed here.');
+  $('pt-detail').textContent = parts.join(' · ');
+  ($('btn-pt-vs') as HTMLButtonElement).disabled = !inBox;
+  $('point-block').hidden = false;
+  status(`Selected ${ref.ref}`);
+}
+
+function clearPoint() {
+  selected = null;
+  (map.getSource('tap') as GeoJSONSource).setData(EMPTY);
+  $('point-block').hidden = true;
+}
+
+// A single tap or click selects a point. The first tap of a double tap
+// (which zooms) must not, so wait briefly to see whether a second follows.
+let tapTimer: number | undefined;
+map.on('click', (e: MapMouseEvent) => {
+  if (tapTimer !== undefined) {
+    clearTimeout(tapTimer);
+    tapTimer = undefined;
+    return; // second tap of a double tap: leave it to the zoom
+  }
+  const { lat, lng } = e.lngLat;
+  tapTimer = window.setTimeout(() => {
+    tapTimer = undefined;
+    void selectPoint(lat, lng);
+  }, 300);
+});
+
+// On touchscreens the map reports only the first tap of a double tap, then
+// zooms: if the map starts zooming or moving, that tap was not a selection.
+const cancelTap = () => {
+  if (tapTimer !== undefined) {
+    clearTimeout(tapTimer);
+    tapTimer = undefined;
+  }
+};
+map.on('zoomstart', cancelTap);
+map.on('dblclick', cancelTap);
+
+$('btn-pt-vs').addEventListener('click', () => {
+  if (!selected || !box) return;
+  const p = latLonToLocal(box.centre, selected.lat, selected.lon);
   void runViewshed(p.x, p.y);
+});
+$('btn-pt-clear').addEventListener('click', clearPoint);
+
+// Crosshair: a fixed mark at the centre of the map; move the map under it.
+class CrosshairControl implements maplibregl.IControl {
+  private el = document.createElement('div');
+  onAdd() {
+    this.el.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-crosshair';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = 'Crosshair: move the map under it to pick a point precisely';
+    b.setAttribute('aria-label', 'Crosshair');
+    b.textContent = '⌖';
+    b.addEventListener('click', () => {
+      const on = $('crosshair').hidden === true;
+      $('crosshair').hidden = !on;
+      $('btn-crosshair-select').hidden = !on;
+      b.classList.toggle('on', on);
+    });
+    this.el.appendChild(b);
+    return this.el;
+  }
+  onRemove() {
+    this.el.remove();
+  }
+}
+map.addControl(new CrosshairControl(), 'top-right');
+$('btn-crosshair-select').addEventListener('click', () => {
+  const c = map.getCenter();
+  void selectPoint(c.lat, c.lng);
 });
 
 // ---------- buttons ----------

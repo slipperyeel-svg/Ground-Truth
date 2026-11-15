@@ -10,7 +10,10 @@
     <title>Ground Truth</title>
   </head>
   <body>
-    <div id="map"></div>
+    <div id="map">
+      <div id="crosshair" hidden aria-hidden="true"></div>
+      <button id="btn-crosshair-select" class="primary floating" hidden>Select crosshair point</button>
+    </div>
 
     <header id="topbar">
       <span class="brand">Ground Truth</span>
@@ -27,6 +30,16 @@
         <div class="label">You</div>
         <div id="pos-ref" class="gr">—</div>
         <div id="pos-detail" class="detail"></div>
+      </div>
+
+      <div id="point-block" class="block" hidden>
+        <div class="label">Selected point</div>
+        <div id="pt-ref" class="gr"></div>
+        <div id="pt-detail" class="detail"></div>
+        <div class="row buttons">
+          <button id="btn-pt-vs" class="primary">Viewshed from here</button>
+          <button id="btn-pt-clear">Clear</button>
+        </div>
       </div>
 
       <div id="ground-info" class="block" hidden>
@@ -82,7 +95,7 @@
       </div>
 
       <div id="vs-block" class="block" hidden>
-        <div class="label">Viewshed — tap the map, or</div>
+        <div class="label">Viewshed — select a point on the map, or</div>
         <div class="row">
           <button id="btn-vs-me">From my position</button>
           <button id="btn-vs-clear">Clear</button>

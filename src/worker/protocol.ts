@@ -30,6 +30,13 @@ export type WorkerRequest =
       useObstacles: boolean;
     }
   | {
+      /** Ground height at a point (local metres), or null outside the loaded box. */
+      type: 'height';
+      id: number;
+      x: number;
+      y: number;
+    }
+  | {
       /** Fetch the map features for the loaded ground and draw them. */
       type: 'features';
       id: number;
@@ -101,4 +108,5 @@ export type WorkerResponse =
   | { type: 'viewshed'; id: number; result: ViewshedResult }
   | { type: 'problem'; id: number; result: ProblemView }
   | { type: 'features'; id: number; result: FeaturesView }
+  | { type: 'height'; id: number; result: number | null }
   | { type: 'error'; id: number; message: string };

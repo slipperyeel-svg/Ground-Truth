@@ -86,3 +86,24 @@ select { min-height: 40px; font: inherit; font-size: 15px; border: 1px solid var
 
 label.check { display: flex; align-items: center; gap: 6px; font-size: 14px; min-height: 36px; margin-top: 4px; }
 label.check input { width: 20px; height: 20px; }
+
+/* Crosshair for precise point selection: fixed at the centre of the map. */
+#crosshair {
+  position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  z-index: 3; pointer-events: none;
+  background:
+    linear-gradient(#000, #000) center / 2px 44px no-repeat,
+    linear-gradient(#000, #000) center / 44px 2px no-repeat;
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);
+}
+#crosshair::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border: 2px solid #d00; border-radius: 50%; background: transparent;
+}
+button.floating {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.maplibregl-canvas-container.maplibregl-interactive { cursor: crosshair; }
+.ctrl-crosshair button { font-size: 20px; line-height: 1; }
+.ctrl-crosshair button.on { background: var(--olive); color: #fff; }
