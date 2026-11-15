@@ -136,6 +136,12 @@ baseSelect.addEventListener('change', () => {
   setBaseMap(baseSelect.value as BaseMapId | 'none');
 });
 
+// On wide screens the controls float over the left of the map: keep map content clear of them.
+const wide = window.matchMedia('(min-width: 900px)');
+const padForPanel = () => map.setPadding({ left: wide.matches ? 444 : 0, top: 0, right: 0, bottom: 0 });
+padForPanel();
+wide.addEventListener('change', padForPanel);
+
 map.on('load', () => {
   setBaseMap(defaultBaseFor(startLat, startLon));
   // Keep the attribution folded behind its small (i) button so it does not
