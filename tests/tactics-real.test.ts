@@ -60,7 +60,7 @@ describe.skipIf(!process.env.NETWORK)('appreciation on real ground (network)', (
       expect(a).not.toBeNull();
       if (process.env.RENDER) render(g, a!, ops, `${process.env.RENDER}-${side}.png`);
       const t3 = performance.now();
-      const ta = templateA({ grid: g, slopeDeg: s, reliefM: classifyGround(g).reliefM, layers: null, approach: a!, enemyOps: ops, requireAccessCheck: false });
+      const ta = templateA({ grid: g, slopeDeg: s, reliefM: classifyGround(g).reliefM, layers: null, approach: a!, enemyOps: ops });
       const r = (p: { x: number; y: number } | undefined) => (p ? `(${Math.round(p.x)}, ${Math.round(p.y)})` : '-');
       console.log(
         `  Template A ${ta.passed ? 'PASSED' : 'failed'} in ${Math.round(performance.now() - t3)} ms.`,

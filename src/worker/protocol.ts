@@ -45,8 +45,6 @@ export type WorkerRequest =
       /** Read the features of the loaded ground and set a tactical problem on it. */
       type: 'problem';
       id: number;
-      /** Testing only (?unchecked=1): allow problems whose stands could not be checked for public access. */
-      allowUnchecked?: boolean;
     };
 
 export interface LoadedGround {

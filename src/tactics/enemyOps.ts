@@ -9,7 +9,7 @@
  * down on a phone.
  */
 import { bearingVector, cellToPoint, createGrid, distance, pointToCell, type Grid, type Point } from '../terrain/grid';
-import { viewshed, type Observer, type ViewshedOptions } from '../terrain/viewshed';
+import { viewshed, type Observer, type Obstacles, type ViewshedOptions } from '../terrain/viewshed';
 import { COVER, type FeatureLayers } from '../features/layers';
 
 export interface EnemyOP extends Observer {
@@ -51,6 +51,33 @@ export function downsample(g: Grid, factor: number): Grid {
   return out;
 }
 
+/**
+ * Obstacles for a coarser copy of the grid: the average obstacle height of
+ * each block, and "wood" where at least half the block is wood.
+ */
+export function downsampleObstacles(g: Grid, obs: Obstacles, factor: number): Obstacles {
+  if (factor <= 1) return obs;
+  const w = Math.floor(g.width / factor);
+  const h = Math.floor(g.height / factor);
+  const heightM = new Float32Array(w * h);
+  const wood = new Uint8Array(w * h);
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      let sum = 0;
+      let woods = 0;
+      for (let dr = 0; dr < factor; dr++)
+        for (let dc = 0; dc < factor; dc++) {
+          const i = (r * factor + dr) * g.width + c * factor + dc;
+          sum += obs.heightM[i];
+          woods += obs.wood[i];
+        }
+      heightM[r * w + c] = sum / (factor * factor);
+      wood[r * w + c] = woods * 2 >= factor * factor ? 1 : 0;
+    }
+  }
+  return { heightM, wood, seeIntoWoodM: obs.seeIntoWoodM };
+}
+
 /** True if woods, scrub or buildings lie within `radiusM` of the point. */
 function nearConcealment(g: Grid, layers: FeatureLayers, p: Point, radiusM: number): boolean {
   const c = pointToCell(g, p);
@@ -79,6 +106,10 @@ export function chooseEnemyOps(
   const bonus = opts.concealmentBonus ?? 1.15;
   const factor = Math.max(1, Math.round((opts.coarseCellM ?? 30) / g.cellM));
   const cg = downsample(g, factor);
+  const coarseView: ViewshedOptions = {
+    ...opts.view,
+    obstacles: opts.view?.obstacles ? downsampleObstacles(g, opts.view.obstacles, factor) : undefined,
+  };
   const u = bearingVector(enemyBearingDeg);
   const half = (g.width * g.cellM) / 2;
 
@@ -101,7 +132,7 @@ export function chooseEnemyOps(
         const cv = layers.cover[c.row * g.width + c.col];
         if (cv === COVER.water || cv === COVER.wetland) continue;
       }
-      const vs = viewshed(cg, p, opts.view);
+      const vs = viewshed(cg, p, coarseView);
       let seen = 0;
       for (const i of friendly) seen += vs[i];
       const share = friendly.length ? seen / friendly.length : 0;

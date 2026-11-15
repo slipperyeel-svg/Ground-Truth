@@ -189,7 +189,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const t0 = performance.now();
       await ensureLayers(progress);
       if (isDemo) featureNote = 'Demo ground: no map features. Public access is not checked.';
-      const out = generateProblem(grid, { layers, requireAccessCheck: !isDemo && !req.allowUnchecked, progress });
+      const out = generateProblem(grid, { layers, obstacles, progress });
       const p = out.problem;
       const r = p?.result;
       const view: ProblemView = {

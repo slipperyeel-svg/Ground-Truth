@@ -119,3 +119,12 @@ The engine now reads the features of the ground as well as its shape, finds the 
 72. **A single tap no longer runs a viewshed.** It selects a point instead: a marker, its 8-figure grid reference, its height (inside the loaded box), and, if your position is known, distance and grid bearing from you in mils (6,400) and degrees. "Viewshed from here" and "Clear" act on it. Grid bearing and distance use BNG in Great Britain, UTM elsewhere.
 73. **Double tap must not select.** On touchscreens the map reports only the first tap of a double tap, so a tap is held for 300 ms and dropped if the map starts zooming in that time.
 74. **Crosshair (⌖ button under the zoom buttons)** for precise selection with a finger: a fixed mark at the map centre; move the map under it and press "Select crosshair point".
+
+## Problems resume: set a problem at a selected point (15 Nov 2026)
+
+75. **PO: problems resume.** "Load at map centre" is replaced by **"Load at selected point"**, and the selected-point panel gains **"Set a problem here"**, which loads the 4 km box centred on the point (if not already) and runs the generator. The selected point is the start for the 1.5 km stand limit.
+76. **Public-access gate dropped** (PO, DECISIONS.md 52): stands may go anywhere except in water, marsh or inside a building. The problem's data note says stands are not restricted to public paths. The testing-only `?unchecked=1` switch is removed.
+77. **The problem engine now uses obstacles** (woods 15 m, buildings 8 m, hedges 2 m): enemy OP choice, NAI visibility, enemy view of OPs and gun areas. Coarse (30 m) viewsheds use block-averaged obstacle heights, with a block counted as wood if at least half is wood.
+78. **First runs (15 Nov 2026), about 6 s from tap to problem including loading:** Westdown (SU 0654 5055) and Brecon (SO 1071 2651) each produced a problem; Larkhill (SU 1453 4330) did not (in every direction the best-view OP was already unseen by enemy OPs, so there was no dilemma).
+79. **PO to judge:** at Westdown an enemy OP was placed inside NAI 1 (Prospect Clump, on the enemy's own route). Enemy OPs are not currently kept away from the NAI or the enemy's route.
+80. **Map attribution** is kept folded behind its (i) button, re-folded whenever the map settles unless the user opened it; it was opening over the bottom of the map and hiding the NAI.

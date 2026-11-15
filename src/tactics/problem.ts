@@ -15,6 +15,7 @@ import { gridRef } from '../geo/gridref';
 import type { FeatureLayers } from '../features/layers';
 import { findApproach, slopeOnlyGoing, type Side } from './approach';
 import { chooseEnemyOps } from './enemyOps';
+import type { Obstacles } from '../terrain/viewshed';
 import { templateA, type TemplateAResult } from './templateA';
 
 const SIDE_NAME: Record<Side, string> = { N: 'north', E: 'east', S: 'south', W: 'west' };
@@ -47,8 +48,8 @@ export interface GenerateOutcome {
 
 export interface GenerateOptions {
   layers: FeatureLayers | null;
-  /** If true (the default), refuse problems whose stands could not be checked for public access. */
-  requireAccessCheck?: boolean;
+  /** Woods, buildings and hedges that block sight. */
+  obstacles?: Obstacles | null;
   /** Order to try enemy directions in. Default: all four, N first. */
   sides?: Side[];
   /** Called with progress messages. */
@@ -78,10 +79,10 @@ export function generateProblem(g: Grid, opts: GenerateOptions): GenerateOutcome
       log.push(`From the ${SIDE_NAME[side]}: the enemy cannot cross the box.`);
       continue;
     }
-    const enemyOps = chooseEnemyOps(g, approach.enemyBearingDeg, opts.layers);
+    const enemyOps = chooseEnemyOps(g, approach.enemyBearingDeg, opts.layers, { view: { obstacles: opts.obstacles ?? undefined } });
     const r = templateA({
       grid: g, slopeDeg, reliefM: ground.reliefM, layers: opts.layers, approach, enemyOps,
-      requireAccessCheck: opts.requireAccessCheck,
+      obstacles: opts.obstacles ?? undefined,
     });
     log.push(`From the ${SIDE_NAME[side]}: ${r.passed ? 'PASSED' : 'rejected'}. ${r.gate.filter((x) => !x.startsWith('✓')).join(' ')}`.trim());
     if (r.passed) {
@@ -164,7 +165,10 @@ export function writeProblem(g: Grid, side: Side, r: TemplateAResult): ProblemTe
   const dataNote =
     `Ground: ${m.source}, about ${m.sourceResolutionM} m resolution${m.surfaceModel ? ' (a surface model: woods and buildings may read as raised ground)' : ''}. ` +
     `Hedges, walls, sunken lanes and folds smaller than this are not shown. ` +
-    (r.accessChecked ? 'Features and paths: © OpenStreetMap contributors.' : 'Map features were not loaded: public access has NOT been checked.');
+    (r.accessChecked
+      ? 'Woods, water, buildings, roads: OS open data; paths and hedges: OpenStreetMap. Woods, buildings and hedges block sight. ' +
+        'Stands are not restricted to public paths: check access on the ground.'
+      : 'Map features were not loaded: woods, roads and water are not taken into account.');
 
   return {
     title: `Template A — OP and gun area: enemy from the ${enemyFrom}`,

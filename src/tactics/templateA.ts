@@ -18,7 +18,8 @@ import { visibilityCount } from '../terrain/viewshed';
 import { isSilhouetted } from '../terrain/crest';
 import { COVER, ROUTE, type FeatureLayers } from '../features/layers';
 import { costDistance, slopeOnlyGoing, type Approach } from './approach';
-import { downsample, type EnemyOP } from './enemyOps';
+import { downsample, downsampleObstacles, type EnemyOP } from './enemyOps';
+import type { Obstacles } from '../terrain/viewshed';
 
 /** Thresholds. Those marked PO are first guesses for the product owner to confirm. */
 export const TEMPLATE_A = {
@@ -109,8 +110,8 @@ export interface TemplateAInput {
   enemyOps: EnemyOP[];
   /** The user's position (local metres); stands are measured from here. Default: box centre. */
   start?: Point;
-  /** If true (the default), fail the gate when access cannot be checked. */
-  requireAccessCheck?: boolean;
+  /** Woods, buildings and hedges that block sight. */
+  obstacles?: Obstacles;
 }
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -131,8 +132,14 @@ export function templateA(input: TemplateAInput): TemplateAResult {
   const step = Math.max(1, Math.round(T.naiSampleM / g.cellM));
   for (let r = 0; r < g.height; r += step)
     for (let c = 0; c < g.width; c += step) if (approach.nai.mask[r * g.width + c]) naiPts.push(cellToPoint(g, c, r));
-  const cg = downsample(g, Math.max(1, Math.round(30 / g.cellM)));
-  const naiCount = visibilityCount(cg, naiPts.map((p) => ({ point: p })), { obsHeightM: 2, targetHeightM: 2 });
+  const factor = Math.max(1, Math.round(30 / g.cellM));
+  const cg = downsample(g, factor);
+  const coarseObstacles = input.obstacles ? downsampleObstacles(g, input.obstacles, factor) : undefined;
+  const naiCount = visibilityCount(cg, naiPts.map((p) => ({ point: p })), {
+    obsHeightM: 2,
+    targetHeightM: 2,
+    obstacles: coarseObstacles,
+  });
   const naiShare = new Float32Array(n);
   for (let r = 0; r < g.height; r++)
     for (let c = 0; c < g.width; c++) {
@@ -142,13 +149,18 @@ export function templateA(input: TemplateAInput): TemplateAResult {
     }
 
   // 2. What the enemy OPs can see: a man (2 m) and a vehicle or gun (3 m).
-  const enemySeesMan = visibilityCount(g, enemyOps, { targetHeightM: 2 });
-  const enemySeesVehicle = visibilityCount(g, enemyOps, { targetHeightM: T.vehicleHeightM });
+  const enemySeesMan = visibilityCount(g, enemyOps, { targetHeightM: 2, obstacles: input.obstacles });
+  const enemySeesVehicle = visibilityCount(g, enemyOps, { targetHeightM: T.vehicleHeightM, obstacles: input.obstacles });
 
-  // 3. Where a stand may go, and how far it is on foot.
+  // 3. Where a stand may go, and how far it is on foot. PO decision
+  //    (DECISIONS.md 52, 75): anywhere except in water or inside a building;
+  //    users are trusted to stay off private land and out of danger.
   const accessChecked = !!layers;
   const allowed = new Uint8Array(n);
-  for (let i = 0; i < n; i++) allowed[i] = layers ? (layers.standOk[i] && !layers.excluded[i] ? 1 : 0) : 1;
+  for (let i = 0; i < n; i++) {
+    const cv = layers ? layers.cover[i] : COVER.open;
+    allowed[i] = cv === COVER.water || cv === COVER.wetland || cv === COVER.building ? 0 : 1;
+  }
   const start = input.start ?? { x: 0, y: 0 };
   const walk = walkingDistance(g, allowed, start);
 
@@ -266,10 +278,8 @@ export function templateA(input: TemplateAInput): TemplateAResult {
   const coas = (bestViewOP ? 1 : 0) + (alternativeOP ? 1 : 0);
   if (coas < 2 && !(dilemmas.some((d) => d.kind === 'exposed-loc') && gunAreas.length >= 2))
     fail('Fewer than two viable courses of action.');
-  if (!accessChecked) {
-    if (input.requireAccessCheck ?? true) fail('Public access could not be checked (map features did not load).');
-    else gate.push('• Public access NOT checked: map features were not loaded.');
-  } else ok('All stands are on public paths or access land, within a 3 km round trip.');
+  ok('Every stand is within 1.5 km of the start (a 3 km round trip).');
+  if (!accessChecked) gate.push('• Map features did not load: woods, roads and water are not taken into account.');
 
   return {
     passed, gate, approach, enemyOps, bestViewOP, alternativeOP, concealedOP, gunAreas, locToBestOP, dilemmas,

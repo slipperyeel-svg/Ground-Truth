@@ -5,8 +5,6 @@
  * Testing indoors: add ?demo=ridge (or cone, valley, flat) to the address to
  * use invented ground; ?lat=..&lon=.. to choose where; &autoload=1 to load
  * straight away; &vs=x,y to draw a viewshed from local metres x,y.
- * &unchecked=1 (testing only) allows problems where public access could not
- * be checked because map features failed to load; the problem says so.
  */
 import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, ImageSource, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
@@ -127,8 +125,18 @@ baseSelect.addEventListener('change', () => {
 
 map.on('load', () => {
   setBaseMap(defaultBaseFor(startLat, startLon));
-  // Keep the attribution as a small (i) button so it does not cover the map.
-  document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+  // Keep the attribution folded behind its small (i) button so it does not
+  // cover the map. The map opens it again whenever new sources are added, so
+  // fold it each time the map settles, unless the user has opened it.
+  let attribOpenedByUser = false;
+  document.querySelector('.maplibregl-ctrl-attrib-button')?.addEventListener('click', () => {
+    attribOpenedByUser = !attribOpenedByUser;
+  });
+  const foldAttribution = () => {
+    if (!attribOpenedByUser) document.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+  };
+  foldAttribution();
+  map.on('idle', foldAttribution);
   map.addSource('hillshade', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('viewshed', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('features', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
@@ -287,7 +295,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-here', 'btn-centre', 'btn-vs-me', 'btn-problem', 'btn-features']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 async function loadGround(lat: number, lon: number) {
@@ -409,7 +417,7 @@ async function setProblem() {
   setBusy(true);
   status('Reading the ground…');
   try {
-    problem = await engine.problem(status, params.get('unchecked') === '1');
+    problem = await engine.problem(status);
     $('pr-features').textContent = problem.featureNote;
     fillList('pr-log-list', problem.log);
     $('pr-log').hidden = false;
@@ -609,9 +617,33 @@ $('btn-here').addEventListener('click', async () => {
   }
 });
 
-$('btn-centre').addEventListener('click', () => {
-  const c = map.getCenter();
-  void loadGround(c.lat, c.lng);
+/** Is the loaded box centred on this point (within 50 m)? */
+function boxCentredOn(p: { lat: number; lon: number }): boolean {
+  if (!box) return false;
+  const d = latLonToLocal(box.centre, p.lat, p.lon);
+  return Math.hypot(d.x, d.y) < 50;
+}
+
+/** Load the 4 km box centred on the selected point, keeping the selection. */
+async function loadAtSelected(): Promise<boolean> {
+  if (!selected) {
+    status('First select a point: tap the map, or use the ⌖ crosshair');
+    return false;
+  }
+  const p = selected;
+  await loadGround(p.lat, p.lon);
+  if (!boxCentredOn(p)) return false; // loading failed; the status says why
+  await selectPoint(p.lat, p.lon);
+  return true;
+}
+
+$('btn-load-point').addEventListener('click', () => void loadAtSelected());
+
+$('btn-pt-problem').addEventListener('click', async () => {
+  if (!selected) return;
+  if (!boxCentredOn(selected) && !(await loadAtSelected())) return;
+  await setProblem();
+  $('problem-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 $('btn-vs-me').addEventListener('click', async () => {

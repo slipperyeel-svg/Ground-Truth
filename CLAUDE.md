@@ -13,7 +13,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 1. **Terrain facts are computed, never guessed.** Viewsheds, dead ground, slope and distances come from elevation data and geometry. An LLM may later write prose and critique answers, using only the computed facts it is given. It never decides what can be seen from where.
 2. **Every problem has a real dilemma.** A problem with one obvious answer is a failure. The quality gate must reject it before the user sees it.
 3. **Be honest about data resolution.** Show the data source and resolution on every problem, and pick an echelon the data can support. The default data (about 30 m) does not show hedges, walls, sunken lanes or small folds.
-4. **Never send people onto private land or into danger.** Stands go only on public paths or open-access land. Exclude military ranges, railways, motorways, water and cliff edges. *(PO, 14 Nov 2026: not a concern for him — he trusts users. The display no longer shows exclusions; revisit the gate's access check before problems resume. DECISIONS.md 52.)*
+4. **~~Never send people onto private land or into danger.~~** *PO, 14–15 Nov 2026: he trusts users; stands are no longer restricted to public paths and exclusions are not enforced. Stands still never go in water or inside buildings, and every problem says to check access on the ground. DECISIONS.md 52, 76.*
 5. **British military terminology and British English** (dead ground, OP, gun area, grid reference, reverse slope, NAI, battery, manoeuvre).
 
 ---
@@ -24,7 +24,7 @@ Phone app that sets a short, Moltke-style tactical problem on the ground where t
 |---|---|
 | **M1 – Terrain engine** | Done. Unit tests pass, including against real Terrarium tiles (`NETWORK=1`), 14 Nov 2026. |
 | **M2 – Map view** | Done, with OS base maps. Live at https://slipperyeel-svg.github.io/Ground-Truth/ ; real OS Explorer tiles and elevation loaded there on 14 Nov 2026. Default base map is now the OS open map (natively Web Mercator, no warp). The Explorer grid-alignment check only matters if Explorer is used (optional, premium); not a priority (PO, 15 Nov 2026). |
-| **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation. OSM features load and display correctly on the PO's device (Larkhill/Amesbury, 14 Nov 2026); Overpass is still unreachable from the cloud workspace. Problems paused at the PO's request. Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
+| **M3 – Template A (OP and gun area) + quality gate** | Built, with map features from OSM, enemy approach/NAI and enemy OPs (`src/features/`, `src/tactics/`). Tested on real elevation. OSM features load and display correctly on the PO's device (Larkhill/Amesbury, 14 Nov 2026); Overpass is still unreachable from the cloud workspace. Problems resumed 15 Nov 2026: "Set a problem here" at a selected point; access gate dropped, obstacles used (DECISIONS.md 75–80). Awaiting PO testing on three pieces of ground, and PO answers in DECISIONS.md 46–50. |
 | M4 – Templates B and C, ground classification choosing between them, access-safe stands from OSM paths | Not started. |
 | M5 – DS feedback, answer capture, then LLM prose and critique from computed facts only | Not started. |
 | M6 – AR prototype (React Native/Expo, native) | Not started. Do not begin until Phase 1 is complete. |
@@ -57,7 +57,7 @@ npm run typecheck
 ```
 
 - **OS key:** set `VITE_OS_KEY` as an environment variable, or in `.env.local` (git-ignored). Never commit the key. Without it the app uses OpenStreetMap only.
-- **Demo ground for indoor testing:** `?demo=ridge` (or `cone`, `valley`, `flat`). Other URL options: `?lat=..&lon=..` to choose the place, `&autoload=1` to load straight away, `&vs=x,y` to draw a viewshed from local metres x,y, `&unchecked=1` (testing only) to allow problems when map features failed to load.
+- **Demo ground for indoor testing:** `?demo=ridge` (or `cone`, `valley`, `flat`). Other URL options: `?lat=..&lon=..` to choose the place, `&autoload=1` to load straight away, `&vs=x,y` to draw a viewshed from local metres x,y.
 - **Real-ground check of the tactics:** `NETWORK=1 npm test`; add `LAT=.. LON=..` to choose the place and `RENDER=out` to draw `out-N.png` etc.
 - **Network:** the environment also allows `overpass-api.de` (features) and the live site, but Overpass drops connections from the cloud workspace (DECISIONS.md 44).
 - **Hosting:** phones only allow location on https sites. `.github/workflows/pages.yml` builds, tests and deploys to GitHub Pages on every push to `main` (Repository Settings → Pages → Source: GitHub Actions). The workflow passes the OS key to the build from a repository secret named `VITE_OS_KEY`; the PO needs to create it (Settings → Secrets and variables → Actions).
@@ -170,8 +170,7 @@ Items 1, 2, 4 and 6 were answered on 14 Nov 2026 (see DECISIONS.md 33–36): cre
 **Quality gate (run before showing any problem).** Reject and retry (move the box, change template, change enemy direction) unless all of these hold:
 - at least two viable courses of action exist, with a measurable trade-off;
 - the template's dilemma test passes;
-- every stand is reachable on public paths or access land within a 3 km round trip;
-- no stand is in an excluded area;
+- every stand is within a 3 km round trip of the start (PO dropped the public-path and exclusion rules, DECISIONS.md 76);
 - the echelon fits the data resolution.
 
 If nothing passes, fall back to Template C, or tell the user plainly why this ground offers no good problem.

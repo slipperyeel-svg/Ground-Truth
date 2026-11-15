@@ -63,8 +63,8 @@ export class Engine {
   }
 
   /** Read the map features and set a tactical problem on the loaded ground. */
-  problem(onProgress?: (m: string) => void, allowUnchecked = false): Promise<ProblemView> {
-    return this.request<ProblemView>({ type: 'problem', allowUnchecked }, onProgress);
+  problem(onProgress?: (m: string) => void): Promise<ProblemView> {
+    return this.request<ProblemView>({ type: 'problem' }, onProgress);
   }
 
   viewshed(
