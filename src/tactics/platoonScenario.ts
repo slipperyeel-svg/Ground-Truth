@@ -144,6 +144,22 @@ const OBJ_NAMES = ['HAWK', 'FALCON', 'KESTREL', 'MERLIN', 'HARRIER', 'OSPREY'];
  * fall halfway between neighbouring platoons; A Coy sits beyond 1 Pl.
  */
 export const FRONTAGE = { light: 800, mechanised: 1200 };
+/**
+ * How long the platoon is given (PO, 15 Nov 2026: vary it). The time needed is the
+ * obvious route at 2 km/h plus time for the task; the problem then makes it tight,
+ * about right, comfortable or generous. First figures; PO to confirm.
+ */
+export const TIMING = {
+  taskMin: { secure: 60, neutralise: 45, findFix: 45, screen: 30 } as Record<TaskType, number>,
+  slack: [
+    { name: 'tight', factor: 0.8 },
+    { name: 'about right', factor: 1.0 },
+    { name: 'comfortable', factor: 1.3 },
+    { name: 'generous', factor: 1.6 },
+  ],
+  minMin: 45,
+  maxMin: 360,
+};
 const PL_NAMES = ['OAK', 'ASH', 'ELM', 'BIRCH', 'ROWAN', 'HAZEL'];
 
 export interface PlatoonScenario {
@@ -391,9 +407,16 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const nowT = input.now ?? new Date();
   random(); // (was the dawn/afternoon choice; kept so the other choices for a seed stay the same)
   const sun = sunTimes(centre.lat, centre.lon, nowT);
-  // Complete by: two hours on, to the nearest ten minutes (PO).
+  // Complete by (PO, 15 Nov 2026: vary it): the time the task needs (the obvious route
+  // at 2 km/h, plus time for the task itself), made tight, about right, comfortable
+  // or generous; to the nearest ten minutes, between 45 minutes and 6 hours.
   const tenMin = 10 * 60_000;
-  const byT = new Date(Math.round((nowT.getTime() + 120 * 60_000) / tenMin) * tenMin);
+  const rt = rng(input.seed ^ 0x71e);
+  const approachMin = chosen.direct ? (chosen.direct.lengthM / 2000) * 60 : 60;
+  const needMin = approachMin + TIMING.taskMin[task];
+  const slack = TIMING.slack[Math.floor(rt() * TIMING.slack.length)];
+  const allowMin = Math.max(TIMING.minMin, Math.min(TIMING.maxMin, needMin * slack.factor));
+  const byT = new Date(Math.round((nowT.getTime() + allowMin * 60_000) / tenMin) * tenMin);
   const tz = input.timeZone;
   const dateStr = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: tz }).format(nowT);
   const nowMs = nowT.getTime();

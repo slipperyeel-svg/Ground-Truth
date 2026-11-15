@@ -64,9 +64,7 @@ describe('time and light (PO, 15 Nov 2026)', () => {
     writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now: new Date(Date.UTC(2026, 10, 15, h, m)), timeZone: 'Europe/London' }).time;
   it('uses the time given, and rounds "complete by" to the nearest ten minutes', () => {
     expect(at(10, 7)).toMatch(/Time now 1007\./);
-    expect(at(10, 7)).toMatch(/complete by 1210\./);
-    expect(at(6, 21)).toMatch(/complete by 0820\./);
-    expect(at(6, 26)).toMatch(/complete by 0830\./);
+    expect(at(10, 7)).toMatch(/complete by \d\d\d0\./);
   });
   it('describes the light for the time of day', () => {
     // Mid-November on Salisbury Plain: first light about 0650, sunrise about 0725, sunset about 1615.
@@ -88,5 +86,23 @@ describe('objectives and boundaries (PO, 15 Nov 2026)', () => {
     const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now, timeZone: 'Europe/London' });
     const b = s.markers.control.filter((c) => c.kind === 'boundary').map((c) => c.label).sort();
     expect(b).toEqual(['I', 'II', '•••']);
+  });
+});
+
+describe('time allowed varies (PO, 15 Nov 2026)', () => {
+  it('gives different completion times for different problems, always to ten minutes and within 45 minutes to 6 hours', () => {
+    const t0 = Date.UTC(2026, 10, 15, 10, 7);
+    const mins = new Set<number>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed, now: new Date(t0), timeZone: 'UTC' });
+      const m = s.time.match(/complete by (\d\d)(\d\d)\./)!;
+      const by = Date.UTC(2026, 10, 15, +m[1], +m[2]);
+      const allowed = (by - t0) / 60_000;
+      expect(+m[2] % 10).toBe(0);
+      expect(allowed).toBeGreaterThanOrEqual(40);
+      expect(allowed).toBeLessThanOrEqual(365);
+      mins.add(allowed);
+    }
+    expect(mins.size).toBeGreaterThan(2);
   });
 });
