@@ -475,6 +475,22 @@
       </div>
     </section>
 
+    <!-- Loading screen while the ground loads and the problem is written. -->
+    <div id="loading" hidden role="status" aria-live="polite">
+      <div class="loading-card">
+        <svg class="loading-mark" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="40" class="ring" />
+          <circle cx="50" cy="50" r="28" class="ring2" />
+          <path d="M50 4 V22 M50 78 V96 M4 50 H22 M78 50 H96" class="ticks" />
+          <circle cx="50" cy="50" r="4" class="dot" />
+        </svg>
+        <div class="loading-title">Vital Ground</div>
+        <div class="loading-sub">Reading the ground and setting your problem</div>
+        <div id="loading-step" class="loading-step"></div>
+        <div id="loading-line" class="loading-line"></div>
+      </div>
+    </div>
+
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

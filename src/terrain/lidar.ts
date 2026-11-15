@@ -155,7 +155,8 @@ export async function loadLidar(
   // reply (an 8 km box at 5 m in one request hung for minutes; 4 km pieces
   // come back in about 2 s). So larger boxes are fetched in pieces, side by
   // side, and stitched together.
-  const MAX_PX = 800;
+  // A little over 800, so an 8 km box at 5 m (1,600 cells plus a cell or two of snapping) is four pieces, not nine.
+  const MAX_PX = 820;
   const pxE = Math.round((b.e1 - b.e0) / cellM), pxN = Math.round((b.n1 - b.n0) / cellM);
   const kE = Math.ceil(pxE / MAX_PX), kN = Math.ceil(pxN / MAX_PX);
   const pieces: { box: BngBox; col: number; row: number; w: number; h: number }[] = [];

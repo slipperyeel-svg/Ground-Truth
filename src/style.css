@@ -313,3 +313,34 @@ body.quick #btn-go-plan { display: none; }
   font: inherit; font-size: 15px; line-height: 1.45; color: var(--ink);
   border: 1.5px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 10px; background: #fcfcfa;
 }
+
+/* ---------- Loading screen ---------- */
+#loading {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(36, 44, 32, 0.55); backdrop-filter: blur(3px);
+  animation: loading-in 0.2s ease-out;
+}
+#loading[hidden] { display: none; }
+@keyframes loading-in { from { opacity: 0; } to { opacity: 1; } }
+.loading-card {
+  width: min(360px, 100%); padding: 26px 22px 22px; text-align: center;
+  background: var(--card); border-radius: 20px; box-shadow: var(--shadow-lift);
+}
+.loading-mark { width: 92px; height: 92px; display: block; margin: 0 auto 10px; }
+.loading-mark .ring { fill: none; stroke: var(--olive-2); stroke-width: 3; stroke-dasharray: 8 6; transform-origin: 50px 50px; animation: spin 6s linear infinite; }
+.loading-mark .ring2 { fill: none; stroke: var(--gold); stroke-width: 2.5; stroke-dasharray: 3 7; transform-origin: 50px 50px; animation: spin 4s linear infinite reverse; }
+.loading-mark .ticks { stroke: var(--olive); stroke-width: 3; stroke-linecap: round; }
+.loading-mark .dot { fill: #c00; animation: pulse 1.6s ease-in-out infinite; transform-origin: 50px 50px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.6); opacity: 0.6; } }
+.loading-title { font-size: 20px; font-weight: 800; letter-spacing: 0.02em; color: var(--olive); }
+.loading-sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.loading-step { font-size: 13px; color: var(--olive-2); margin-top: 14px; min-height: 18px; font-weight: 600; }
+.loading-line {
+  font-size: 15px; font-style: italic; color: var(--ink); margin-top: 12px; min-height: 42px; line-height: 1.4;
+  opacity: 0; transform: translateY(4px); transition: opacity 0.25s, transform 0.25s;
+}
+.loading-line.show { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .loading-mark .ring, .loading-mark .ring2, .loading-mark .dot { animation: none; }
+}

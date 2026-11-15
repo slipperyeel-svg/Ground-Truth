@@ -58,7 +58,78 @@ let lastObserver: { x: number; y: number } | null = null;
 let watchId: number | null = null;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const status = (msg: string) => ($('status').textContent = msg);
+const status = (msg: string) => {
+  $('status').textContent = msg;
+  // While the loading screen is up, show the real progress on it too.
+  const step = document.getElementById('loading-step');
+  if (step) step.textContent = msg;
+};
+
+// ---------- Loading screen while the ground loads and the problem is written (PO, 15 Nov 2026) ----------
+const LOADING_LINES = [
+  'Asking the platoon sergeant where the map went…',
+  'Counting the contour lines twice…',
+  'Persuading the enemy to sit on the reverse slope…',
+  'Discovering the track on the map is now a field…',
+  'Waiting for the brew to boil…',
+  'Sharpening the chinagraph pencils…',
+  'Checking the grid reference with three different people…',
+  'Hiding the dummy trenches really quite well…',
+  'Finding the one bit of dead ground nobody mentioned…',
+  'Re-reading Moltke, again…',
+  'Folding the map the wrong way…',
+  'Debating forward versus reverse slope, again…',
+  'Waiting for comms to come back up…',
+  'Measuring the DS\'s "just over that rise"…',
+  'Locating the CQMS and the hot food…',
+  'Telling the mortar line to stand by…',
+  'Confirming first light with someone who owns a watch…',
+  'Rehearsing "any questions?" at the end of orders…',
+  'Laying out the model pit with string and twigs…',
+  'Working out which way is actually north…',
+  'Warning the enemy that they will not read this…',
+  'Reminding everyone the ground does not lie…',
+];
+let loadingDepth = 0;
+let loadingHide: number | undefined;
+let loadingTimer: number | undefined;
+function showLoading(on: boolean) {
+  const box = $('loading');
+  if (on) {
+    clearTimeout(loadingHide);
+    if (!box.hidden) return;
+    box.hidden = false;
+    $('loading-step').textContent = $('status').textContent ?? '';
+    const lines = [...LOADING_LINES].sort(() => Math.random() - 0.5);
+    let k = 0;
+    const next = () => {
+      const el = $('loading-line');
+      el.classList.remove('show');
+      // Fade the old line out, then the next one in.
+      setTimeout(() => {
+        el.textContent = lines[k++ % lines.length];
+        el.classList.add('show');
+      }, 250);
+    };
+    next();
+    loadingTimer = window.setInterval(next, 3600);
+  } else {
+    // A short pause, so the screen does not flicker between loading the ground and writing the problem.
+    loadingHide = window.setTimeout(() => {
+      $('loading').hidden = true;
+      clearInterval(loadingTimer);
+    }, 400);
+  }
+}
+async function building<T>(fn: () => Promise<T>): Promise<T> {
+  loadingDepth++;
+  showLoading(true);
+  try {
+    return await fn();
+  } finally {
+    if (--loadingDepth === 0) showLoading(false);
+  }
+}
 /** A genuinely transparent 1×1 image, used to clear an overlay. */
 const BLANK = (() => {
   const c = document.createElement('canvas');
@@ -483,7 +554,11 @@ const chosenDetail = () => ($('sel-detail') as HTMLSelectElement).value as Detai
 /** True if the loaded ground is what the problem engine needs: a 4 km box at 10 m. */
 const groundFitsProblems = () => !!ground && ground.cellM === 10 && ground.width * ground.cellM === 4000;
 
-async function loadGround(lat: number, lon: number, detail: Detail = chosenDetail()) {
+/** Load ground, with the loading screen up meanwhile. */
+function loadGround(lat: number, lon: number, detail: Detail = chosenDetail()): Promise<void> {
+  return building(() => loadGroundInner(lat, lon, detail));
+}
+async function loadGroundInner(lat: number, lon: number, detail: Detail) {
   setBusy(true);
   status(demo ? 'Building demo ground…' : 'Fetching elevation data…');
   try {
@@ -895,11 +970,16 @@ type ProblemKind = 'normal' | 'quick' | 'daily';
 /** For a Quick problem: two questions and ten minutes (PO, 15 Nov 2026: read and answer only). */
 const QUICK_QUESTIONS = ['What do you decide to do, and why?', 'Give your outline orders to your section commanders.'];
 
-async function runScenario(
+/** Set a problem, with the loading screen up meanwhile. */
+function runScenario(...args: Parameters<typeof runScenarioInner>): Promise<void> {
+  return building(() => runScenarioInner(...args));
+}
+async function runScenarioInner(
   seed: number,
   resume?: Plan.SavedPlan,
   opts: { kind?: ProblemKind; now?: number; label?: string } = {},
 ) {
+  closeStartPopup();
   if (!box) return;
   clearScenario();
   clearCompany();
