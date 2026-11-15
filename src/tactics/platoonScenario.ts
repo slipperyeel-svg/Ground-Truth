@@ -611,9 +611,51 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
   const along2 = (l: number, f0: number, f1: number): Point[] => [f0, f1].map((f) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
   const boundaryLat = onePlSide * 900;
+  // The B/A boundary follows lines on the ground where it can (PO, 15 Nov
+  // 2026): roads, tracks, streams, hedges, railways and wood edges, within
+  // 300 m of the straight line, so it stays between 1 Pl and A Coy.
+  const boundary = (() => {
+    const [a, b] = along2(boundaryLat, -1200, bgObjFwd + 300);
+    if (!lay) return { path: [a, b], follows: '' };
+    const W = cg.width, Hh = cg.height;
+    const woodEdge = (i: number) => {
+      if (lay.cover[i] !== COVER.wood) return false;
+      const c = i % W;
+      return (c > 0 && lay.cover[i - 1] !== COVER.wood) || (c < W - 1 && lay.cover[i + 1] !== COVER.wood) ||
+        (i >= W && lay.cover[i - W] !== COVER.wood) || (i < W * (Hh - 1) && lay.cover[i + W] !== COVER.wood);
+    };
+    const featureAt = (i: number): string => {
+      if (lay.route[i] >= 3) return 'road';
+      if (lay.route[i] >= 1) return 'track';
+      if (lay.stream[i] || lay.river[i]) return 'stream';
+      if (lay.railway[i]) return 'railway';
+      if (lay.hedge[i]) return 'hedge line';
+      if (woodEdge(i)) return 'wood edge';
+      return '';
+    };
+    const cost = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const q = cellToPoint(cg, i % W, Math.floor(i / W));
+      const dev = Math.abs(lat(q) - boundaryLat);
+      if (dev > 300) { cost[i] = Infinity; continue; }
+      cost[i] = (featureAt(i) ? 0.15 : 1) + (dev / 300) ** 2 * 0.5;
+    }
+    const s0 = cellOf(a), e0 = cellOf(b);
+    if (s0 < 0 || e0 < 0) return { path: [a, b], follows: '' };
+    const { prev } = costDistance(cg, cost, [s0]);
+    const cells: number[] = [];
+    for (let i = e0; i >= 0; i = prev[i]) cells.push(i);
+    if (cells[cells.length - 1] !== s0) return { path: [a, b], follows: '' };
+    cells.reverse();
+    const tally: Record<string, number> = {};
+    for (const i of cells) { const f = featureAt(i); if (f) tally[f] = (tally[f] ?? 0) + 1; }
+    const top = Object.entries(tally).sort((x, y) => y[1] - x[1])[0];
+    const path = cells.filter((_, k) => k % 5 === 0 || k === cells.length - 1).map((i) => cellToPoint(cg, i % W, Math.floor(i / W)));
+    return { path, follows: top && top[1] * cg.cellM >= 400 ? top[0] : '' };
+  })();
   const control: ScenarioMarkers['control'] = [
     // B Coy / A Coy boundary; sides are [left, right] looking forward: B on our side, A on theirs.
-    { kind: 'boundary', path: along2(boundaryLat, -1200, bgObjFwd + 300), label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },
+    { kind: 'boundary', path: boundary.path, label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },
     { kind: 'phaseLine', path: across(150, -1600, 1600), label: 'SL' },
     { kind: 'phaseLine', path: across(Math.min(900, Math.max(400, frontLine - 300)), -1600, 1600), label: plName },
   ];
@@ -650,7 +692,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     {
       element: 'Flanks',
       detail:
-        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about 1.3 km away beyond 1 Pl, boundary marked on the map. ` +
+        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about 1.3 km away beyond 1 Pl; the boundary is marked on the map${boundary.follows ? `, mostly along the ${boundary.follows}` : ''}. ` +
         `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: open; ${neighbour.short} BG is about 5 km away, out of contact. ` +
         `Rear: C Coy (battlegroup reserve) at ${ref(cCoy)}.`,
     },
