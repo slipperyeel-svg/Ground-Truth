@@ -65,7 +65,9 @@ export interface RouteFacts {
 /** Map markers for the situation (APP-6 symbols and tactical graphics are drawn from these). */
 export interface ScenarioMarkers {
   /** Friendly units, always shown. */
-  friendly: { label: string; designation: string; higher: string; point: Point; echelon: 'platoon' | 'company'; hq?: boolean; own?: boolean }[];
+  friendly: { label: string; designation: string; higher: string; point: Point; echelon: 'platoon' | 'company'; hq?: boolean; own?: boolean;
+    /** APP-6 unit type: infantry, or motorised infantry for a Boxer-mounted battlegroup. */
+    kind: 'infantry' | 'motorisedInfantry' }[];
   /** Friendly control measures (2 up): company boundary, start line, phase line. */
   control: { kind: 'boundary' | 'phaseLine'; path: Point[]; label: string; /** Boundary: units on its [left, right], looking forward. */ sides?: [string, string] }[];
   /** The battlegroup objective. */
@@ -357,6 +359,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
   const plName = `PL ${pick2(PL_NAMES)}`;
   const bg = `${bn.short} BG`;
+  const infKind = bgType === 'mechanised' ? 'motorisedInfantry' as const : 'infantry' as const;
   const you = `You command 2 Platoon, B Company, ${bn.full}${bgType === 'mechanised' ? ' (mechanised, in Boxer)' : ''}. Your company commander is with Company HQ.`;
   const force = bgType === 'light'
     ? [
@@ -563,10 +566,10 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const onePl = { x: start.x + v.x * onePlSide * 500, y: start.y + v.y * onePlSide * 500 };
   const behind = (d: number, l = 0) => ({ x: start.x - u.x * d + v.x * l, y: start.y - u.y * d + v.y * l });
   const friendly: ScenarioMarkers['friendly'] = [
-    { label: '2 Pl (you)', designation: '2', higher: 'B', point: start, echelon: 'platoon', own: true },
-    { label: '1 Pl', designation: '1', higher: 'B', point: onePl, echelon: 'platoon' },
-    { label: '3 Pl', designation: '3', higher: 'B', point: behind(400, -onePlSide * 200), echelon: 'platoon' },
-    { label: 'B Coy HQ', designation: 'B', higher: '', point: behind(550, onePlSide * 250), echelon: 'company', hq: true },
+    { label: '2 Pl (you)', designation: '2', higher: 'B', point: start, echelon: 'platoon', own: true, kind: infKind },
+    { label: '1 Pl', designation: '1', higher: 'B', point: onePl, echelon: 'platoon', kind: infKind },
+    { label: '3 Pl', designation: '3', higher: 'B', point: behind(400, -onePlSide * 200), echelon: 'platoon', kind: infKind },
+    { label: 'B Coy HQ', designation: 'B', higher: '', point: behind(550, onePlSide * 250), echelon: 'company', hq: true, kind: infKind },
   ];
   const axisEnd = (from: Point, to: Point, short: number) => {
     const d = distance(from, to) || 1;
@@ -598,8 +601,8 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const aCoy = clampBox({ x: start.x + v.x * onePlSide * 1300, y: start.y + v.y * onePlSide * 1300 });
   const cCoy = clampBox(behind(1400, -onePlSide * 150));
   friendly.push(
-    { label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company' },
-    { label: 'C Coy', designation: 'C', higher: '', point: cCoy, echelon: 'company' },
+    { label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company', kind: infKind },
+    { label: 'C Coy', designation: 'C', higher: '', point: cCoy, echelon: 'company', kind: infKind },
   );
   axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
   const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));

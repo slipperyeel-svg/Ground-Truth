@@ -595,7 +595,7 @@ function renderSituation() {
   const units: object[] = [];
   const graphics: object[] = [];
   for (const f of m.friendly) {
-    units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
+    units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq, kind: f.kind }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
   }
   for (const a of m.axes) graphics.push(...axisArrow(c, a.path[0], a.path[a.path.length - 1], 'friend', a.label));
   for (const l of m.control) graphics.push(...controlLine(c, l.kind, l.path, l.label, l.sides));

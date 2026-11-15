@@ -6,8 +6,8 @@
  *   version 10 · context 0 (reality) · standard identity (3 friend, 6 hostile) ·
  *   symbol set 10 (land unit) · status (0 present, 1 planned/anticipated/suspected:
  *   a dashed frame) · HQ/dummy (0 none, 1 feint/dummy, 2 HQ) · echelon
- *   (11 team, 13 section, 14 platoon, 15 company) · entity 121100 (infantry) ·
- *   modifiers 0000.
+ *   (11 team, 13 section, 14 platoon/troop, 15 company/squadron) · entity
+ *   (see UNIT_ENTITY: infantry, motorised infantry, armour, recce…) · modifiers 0000.
  */
 import * as msModule from 'milsymbol';
 import type { Map as MapLibreMap } from 'maplibre-gl';
@@ -22,21 +22,40 @@ export type Echelon = 'team' | 'section' | 'platoon' | 'company';
 
 const ECHELON: Record<Echelon, string> = { team: '11', section: '13', platoon: '14', company: '15' };
 
+/**
+ * Unit types and their APP-6 D land-unit entity codes (checked against milsymbol):
+ * infantry 121100 (a cross); motorised infantry 121104 (cross with a vertical
+ * line: used for Boxer, PO 15 Nov 2026); armour 120500 (the tank oval);
+ * reconnaissance 121300 (one diagonal); motorised recce 121303 (diagonal and
+ * vertical line); armoured recce 120501 (oval with a diagonal).
+ */
+export type UnitKind = 'infantry' | 'motorisedInfantry' | 'armour' | 'recce' | 'motorisedRecce' | 'armouredRecce';
+export const UNIT_ENTITY: Record<UnitKind, string> = {
+  infantry: '121100',
+  motorisedInfantry: '121104',
+  armour: '120500',
+  recce: '121300',
+  motorisedRecce: '121303',
+  armouredRecce: '120501',
+};
+
 export interface UnitSpec {
   identity: Identity;
   echelon: Echelon;
+  /** Default: infantry. */
+  kind?: UnitKind;
   hq?: boolean;
   dummy?: boolean;
   /** Suspected (not confirmed): a dashed frame. */
   suspected?: boolean;
 }
 
-/** The APP-6 symbol code for an infantry unit. */
+/** The APP-6 symbol code for a land unit (infantry unless `kind` says otherwise). */
 export function sidc(u: UnitSpec): string {
   const identity = u.identity === 'friend' ? '3' : '6';
   const status = u.suspected ? '1' : '0';
   const hqDummy = u.dummy && u.hq ? '3' : u.dummy ? '1' : u.hq ? '2' : '0';
-  return `100${identity}10${status}${hqDummy}${ECHELON[u.echelon]}1211000000`;
+  return `100${identity}10${status}${hqDummy}${ECHELON[u.echelon]}${UNIT_ENTITY[u.kind ?? 'infantry']}0000`;
 }
 
 /** Add a symbol image to the map (once) and return its name and the offset that puts its anchor on the point. */

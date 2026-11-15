@@ -108,7 +108,7 @@ Vite + TypeScript, no UI framework. MapLibre GL JS for the map, proj4 for grid r
 | `src/tactics/companyDefence.ts` | Enemy company: routes, defensibility, 2 forward + 1 depth platoon, sections/teams, outposts, HQ, gap; optional mines, dummies, dispersal, drone concealment, ISR/fires |
 | `src/tactics/platoonScenario.ts` | Infantry platoon scenario (G1–G13): task, information with sources, light, ground facts, questions, phase 2, DS routes and gate |
 | `src/tactics/sun.ts` | Sunrise, sunset, first and last light |
-| `src/app/symbols.ts` | NATO APP-6 unit symbols (milsymbol) as map images |
+| `src/app/symbols.ts` | NATO APP-6 unit symbols (milsymbol) as map images: infantry, motorised infantry (Boxer), armour, recce (plain, motorised, armoured); mine symbols |
 | `src/app/graphics.ts` | Tactical graphics: axes of advance, objective, task graphics, minefields |
 | `src/tactics/problem.ts` | Tries each enemy direction, ranks passes, writes the problem and DS notes |
 | `src/main.ts`, `index.html`, `src/style.css` | The map screen (phone-first, high contrast): point selection by tap or crosshair, viewshed, features, "Set a problem" |
