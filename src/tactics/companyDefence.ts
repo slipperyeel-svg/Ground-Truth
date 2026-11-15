@@ -58,9 +58,18 @@ export const OPTION_CHANCE: Record<OptionKey, number> = {
 /** First figures, from doctrine (DECISIONS.md 112); PO to tune. */
 export const COMPANY = {
   analysisCellM: 10,
-  /** Forward platoon centres this far ahead of the start. */
+  /**
+   * Forward platoon centres this far ahead of the start: within the preferred
+   * distance if the ground there allows a company defence; further out (up to
+   * forwardMaxM) if nothing fits nearer, or the best ground further out is at
+   * least `fartherIfBetterBy` times as good. PO, 15 Nov 2026: the enemy need
+   * not be within 1,300 m, and the ground should win; so 1.0: the best ground
+   * anywhere in range, with nearer ground winning a tie.
+   */
   forwardMinM: 600,
-  forwardMaxM: 1300,
+  forwardPreferredM: 1300,
+  forwardMaxM: 2500,
+  fartherIfBetterBy: 1.0,
   /** Candidate positions are searched this far either side of the main route. */
   lateralMaxM: 1100,
   sampleM: 60,
@@ -344,17 +353,21 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
   //    right distance apart, at a similar depth.
   const n = opts.dispersed ? C.teamsPerPlatoon : C.sectionsPerPlatoon;
   const spacing = opts.dispersed ? C.teamSpacingM : C.sectionSpacingM;
+  // A forward platoon must leave room behind it, inside the box, for the depth platoon.
+  const depthRoom = C.depthBehindM[0] + C.platoonDepthM / 2;
+  const inBox = (p: Point) => half - Math.abs(p.x) >= C.edgeMarginM && half - Math.abs(p.y) >= C.edgeMarginM;
   const centres = cands.filter((c) => {
     const f = fwd(ctx, c.p);
-    return f >= C.forwardMinM && f <= C.forwardMaxM;
+    return f >= C.forwardMinM && f <= C.forwardMaxM && inBox({ x: c.p.x + u.x * depthRoom, y: c.p.y + u.y * depthRoom });
   });
   const value = new Map<Cand, { v: number; picks: Cand[] }>();
   for (const c of centres) {
     const picks = bestIn(cg, cands, c.p, u, n, spacing);
     value.set(c, { v: picks.reduce((a, b) => a + b.total, 0) * (picks.length >= Math.min(3, n) ? 1 : 0.5), picks });
   }
-  let pair: [Cand, Cand] | null = null;
-  let pairV = -Infinity;
+  // Best pair within the preferred distance, and best pair anywhere.
+  let near: [Cand, Cand] | null = null, nearV = -Infinity;
+  let far: [Cand, Cand] | null = null, farV = -Infinity;
   for (const a of centres)
     for (const b of centres) {
       if (lat(a.p) >= lat(b.p)) continue;
@@ -367,8 +380,12 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
       let cross = 0;
       for (const x of va.picks) for (const y of vb.picks) cross = Math.max(cross, (supports(cg, x, y) + supports(cg, y, x)) / 2);
       const vv = va.v + vb.v + COMPANY.supportWeight * cross;
-      if (vv > pairV) [pairV, pair] = [vv, [a, b]];
+      if (vv > farV) [farV, far] = [vv, [a, b]];
+      const isNear = Math.max(fwd(ctx, a.p), fwd(ctx, b.p)) <= C.forwardPreferredM;
+      if (isNear && vv > nearV) [nearV, near] = [vv, [a, b]];
     }
+  const pair = near && farV < C.fartherIfBetterBy * nearV ? near : far;
+  const pairV = pair === near ? nearV : farV;
   if (!pair) return { log: `Advancing ${DIR(side)}: no two platoon areas fit the frontage.`, layout: null };
 
   const fwdPicks = [value.get(pair[0])!.picks, value.get(pair[1])!.picks];
