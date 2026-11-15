@@ -313,7 +313,10 @@ map.on('load', () => {
   map.addLayer({
     id: 'graphics-labels', type: 'symbol', source: 'graphics', filter: ['==', ['get', 'kind'], 'label'],
     layout: {
-      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-size': ['case', ['==', ['get', 'big'], true], 20, 12],
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-size': ['interpolate', ['linear'], ['zoom'],
+        12, ['case', ['==', ['get', 'big'], true], 18, 12],
+        14, ['case', ['==', ['get', 'big'], true], 22, 14],
+        16, ['case', ['==', ['get', 'big'], true], 30, 18]],
       'text-allow-overlap': true,
     },
     paint: { 'text-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'], 'text-halo-color': '#fff', 'text-halo-width': 2 },
@@ -323,8 +326,12 @@ map.on('load', () => {
     id: 'units', type: 'symbol', source: 'units',
     layout: {
       'icon-image': ['get', 'icon'], 'icon-anchor': 'top-left', 'icon-offset': ['get', 'off'],
+      // Symbols grow as you zoom in, so they stay readable on a big screen (PO, 15 Nov 2026).
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.9, 14, 1.2, 16, 2, 18, 2.8],
       'icon-allow-overlap': true, 'icon-ignore-placement': true,
-      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top',
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 13, 14, 15, 16, 20, 18, 26],
+      'text-offset': [0, 1.5], 'text-anchor': 'top',
       'text-optional': true,
     },
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },

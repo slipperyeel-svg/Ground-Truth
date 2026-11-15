@@ -52,7 +52,9 @@ export function ensureSymbol(
   if (text.designation) labels.uniqueDesignation = text.designation;
   if (text.higher) labels.higherFormation = text.higher;
   const sym = new ms.Symbol(code, {
-    size: 16,
+    size: 24,
+    // Larger text beside the symbol (designation, higher formation): default 40 (PO, 15 Nov 2026).
+    infoSize: 60,
     // APP-6 colours: friendly blue fill, hostile red fill.
     fill: true,
     // A little see-through, so map detail shows behind the symbol (PO, 15 Nov 2026).
@@ -62,10 +64,10 @@ export function ensureSymbol(
   });
   const a = sym.getAnchor();
   if (!map.hasImage(name)) {
-    const canvas = sym.asCanvas(2);
+    const canvas = sym.asCanvas(3); // drawn at 3x so it stays sharp when enlarged on zoom
     const ctx = canvas.getContext('2d')!;
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    map.addImage(name, { width: img.width, height: img.height, data: new Uint8Array(img.data.buffer) }, { pixelRatio: 2 });
+    map.addImage(name, { width: img.width, height: img.height, data: new Uint8Array(img.data.buffer) }, { pixelRatio: 3 });
   }
   return { name, offset: [-a.x, -a.y] };
 }
