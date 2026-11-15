@@ -5,6 +5,8 @@
  * or syndicate.
  */
 
+import type { DevelopedSituation } from '../tactics/planEvents';
+
 export type LatLon = { lat: number; lon: number };
 
 export interface PlanMarkLL extends LatLon {
@@ -21,6 +23,8 @@ export interface PlanState {
   answers2: string[];
   /** What was added, in order, for Undo. */
   history: ('route' | 'mark')[];
+  /** The situation as it developed on the route marked (worked out once, then fixed). */
+  developed?: DevelopedSituation;
 }
 
 /** Enough to set exactly the same problem again (same ground, enemy, task and times). */

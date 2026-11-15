@@ -754,6 +754,7 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
     showScenario();
     renderPlan();
     if (!resume) Plan.savePlan(problemKey, plan);
+    else if (plan.developed) showDeveloped(plan.developed);
     renderSituation();
     zoomToSituation();
     status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
@@ -766,12 +767,53 @@ async function runScenario(seed: number, resume?: Plan.SavedPlan) {
 }
 
 $('btn-sc-new').addEventListener('click', () => void runScenario(Math.floor(Math.random() * 1e9)));
-$('btn-sc-develop').addEventListener('click', () => {
+// The situation develops from the plan the user marked (PO, 15 Nov 2026): a
+// route is needed; what happens is worked out once along it, then fixed.
+$('btn-sc-develop').addEventListener('click', async () => {
+  const s = scenario?.scenario;
+  if (!s || !box) return;
+  if (plan.developed) return showDeveloped(plan.developed);
+  if (plan.route.length < 2) {
+    $('plan-mode').textContent = 'Mark your route first (Draw my route): the situation develops from the route you choose.';
+    status('Mark your route before the situation develops');
+    $('plan-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  planTool = null;
+  setBusy(true);
+  status('Working out what happens on your route…');
+  try {
+    const d = await engine.develop(
+      { route: plan.route.map(toLocal), positions: plan.marks.map((m) => ({ kind: m.kind, label: m.label, point: toLocal(m) })) },
+      s.startMs,
+    );
+    plan.developed = d;
+    savePlanNow();
+    showDeveloped(d);
+    status('The situation develops');
+  } catch (err) {
+    status(`Could not develop the situation: ${(err as Error).message}`);
+  } finally {
+    setBusy(false);
+  }
+});
+
+/** Show the developed situation: messages, new (suspected) enemy and mines on the map. */
+function showDeveloped(d: Plan.PlanState['developed'] & object) {
+  const s = scenario?.scenario;
+  if (!s) return;
+  s.phase2.time = d.time;
+  s.phase2.messages = d.messages;
+  s.markers.sightings = [...s.markers.sightings.filter((x) => x.phase === 1), ...d.sightings.map((x) => ({ ...x, phase: 2 as const }))];
+  s.markers.minefields = [...s.markers.minefields.filter((x) => x.phase === 1), ...d.minefields.map((x) => ({ ...x, phase: 2 as const }))];
+  $('sc-p2time').textContent = d.time;
+  $('sc-p2msgs').replaceChildren(...d.messages.map((m) => el('li', `${m.time}, from ${m.from}: "${m.text}"`)));
   $('sc-phase2').hidden = false;
   phase2Shown = true;
   renderSituation();
+  renderPlan();
   $('sc-phase2').scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
+}
 $('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden === true));
 
 const toLocal = (p: Plan.LatLon) => latLonToLocal(box!.centre, p.lat, p.lon);

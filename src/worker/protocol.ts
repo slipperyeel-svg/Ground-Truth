@@ -1,5 +1,6 @@
 /** Messages between the page and the analysis worker. */
 import type { PlanFacts, PlanInput } from '../tactics/planFacts';
+import type { DevelopedSituation } from '../tactics/planEvents';
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
@@ -77,6 +78,13 @@ export type WorkerRequest =
       seed: number;
       /** The time the problem is set for (ms since 1970), so a resumed problem reads the same. */
       now?: number;
+    }
+  | {
+      /** The situation develops, worked out from the user's plan (local metres). */
+      type: 'develop';
+      id: number;
+      plan: PlanInput;
+      startMs: number;
     }
   | {
       /** Facts about the user's plan against the last scenario's enemy (local metres). */
@@ -228,4 +236,5 @@ export type WorkerResponse =
   | { type: 'company'; id: number; result: CompanyView }
   | { type: 'scenario'; id: number; result: ScenarioView }
   | { type: 'planFacts'; id: number; result: PlanFacts }
+  | { type: 'develop'; id: number; result: DevelopedSituation }
   | { type: 'error'; id: number; message: string };

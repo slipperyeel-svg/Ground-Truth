@@ -4,6 +4,8 @@
  * requests (e.g. a viewshed from a tapped point) need no new download.
  */
 import { planFacts } from '../tactics/planFacts';
+import { developFromPlan } from '../tactics/planEvents';
+import { hhmm } from '../tactics/sun';
 import {
   classifyGround,
   countMask,
@@ -327,6 +329,16 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       };
       // The masks are copied, not transferred: the worker keeps the layout for plan facts.
       post({ type: 'scenario', id: req.id, result: view });
+    } else if (req.type === 'develop') {
+      if (!grid || !lastScenarioLayout) throw new Error('No problem set yet');
+      const g = grid;
+      const ref = (p: { x: number; y: number }) => {
+        const c = g.meta.centre;
+        if (!c) return `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+        const ll = localToLatLon(c, p.x, p.y);
+        return gridRef(ll.lat, ll.lon, 3).ref;
+      };
+      post({ type: 'develop', id: req.id, result: developFromPlan(g, obstacles, lastScenarioLayout, req.plan, req.startMs, ref, (d) => hhmm(d)) });
     } else if (req.type === 'planFacts') {
       if (!grid || !lastScenarioLayout) throw new Error('No problem set yet');
       const g = grid;

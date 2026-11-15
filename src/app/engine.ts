@@ -2,6 +2,7 @@
  * The page's handle on the analysis worker: each request returns a promise.
  */
 import type { PlanFacts, PlanInput } from '../tactics/planFacts';
+import type { DevelopedSituation } from '../tactics/planEvents';
 import type { Posture } from '../tactics/sectionDefence';
 import type { CompanyOptions } from '../tactics/companyDefence';
 import type { InfoLevel, TaskType } from '../tactics/platoonScenario';
@@ -33,6 +34,7 @@ export class Engine {
       else if (msg.type === 'viewshed') p.resolve(msg.result);
       else if (msg.type === 'problem') p.resolve(msg.result);
       else if (msg.type === 'planFacts') p.resolve(msg.result);
+      else if (msg.type === 'develop') p.resolve(msg.result);
       else if (msg.type === 'features') p.resolve(msg.result);
       else if (msg.type === 'height') p.resolve(msg.result);
       else if (msg.type === 'section') p.resolve(msg.result);
@@ -72,6 +74,10 @@ export class Engine {
   }
 
   /** Generate an enemy company and an infantry platoon scenario against it. */
+  develop(plan: PlanInput, startMs: number): Promise<DevelopedSituation> {
+    return this.request<DevelopedSituation>({ type: 'develop', plan, startMs });
+  }
+
   planFacts(plan: PlanInput): Promise<PlanFacts> {
     return this.request<PlanFacts>({ type: 'planFacts', plan });
   }

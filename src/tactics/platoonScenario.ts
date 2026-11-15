@@ -124,7 +124,9 @@ export interface PlatoonScenario {
   /** Two or three questions (G10). */
   questions: string[];
   timeAllowed: string;
-  /** Phase 2: the situation develops (G11). */
+  /** The time the problem is set for (ms since 1970). */
+  startMs: number;
+  /** Phase 2: the situation develops (G11). Replaced in the app by developments worked out from the user's plan (planEvents.ts). */
   phase2: { time: string; messages: { time: string; from: string; text: string }[]; questions: string[] };
   /** Ground truth facts, revealed after the user decides (G13: no school solution). */
   ds: string[];
@@ -692,6 +694,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     title: `${TASK_LABEL[task]}: 2 Platoon, B Company, ${bn.short}, advancing ${dir}`,
     you, force, situation, bgType, friendlyForces, task_text, enemy, enemyGaps, time, ground, ownTroops, weather, questions,
     timeAllowed: '30 minutes for your plan; 10 minutes when the situation develops.',
+    startMs: nowT.getTime(),
     phase2, ds,
     objective: objective.point,
     markers: { friendly, control, bgObjective, axes, task: taskMarker, sightings, minefields },
