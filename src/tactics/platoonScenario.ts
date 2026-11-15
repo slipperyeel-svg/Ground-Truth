@@ -444,7 +444,6 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const t2 = new Date(nowT.getTime() + 40 * 60_000);
 
   // ---- Who you are, your force, situation and task (G2–G4) -------------------
-  const leftRight = (p: Point) => (lat(p) >= 0 ? 'right' : 'left');
   // 2 up: battlegroup name and type (own random stream, so the other choices for a seed are unchanged).
   const r2 = rng(input.seed ^ 0x5eed2);
   const pick2 = <T>(xs: T[]) => xs[Math.floor(r2() * xs.length)];
@@ -595,7 +594,11 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   }
 
   // ---- Own troops (G8) and weather (G9) ---------------------------------------
-  const ownTroops = `1 Platoon is advancing on your ${leftRight(other.centre) === 'left' ? 'right' : 'left'}. 3 Platoon (the company reserve) and Company HQ are with you at ${ref(start)}.`;
+  // 1 Pl goes on the side of the other enemy forward platoon, which it is to fix (PO, 15 Nov 2026);
+  // in the screen task 1 Pl takes the main route and you screen the flank towards the other platoon.
+  const sOther = Math.sign(lat(other.centre) - lat(blocking.centre)) || 1;
+  const onePlSide = task === 'screen' ? -sOther : sOther;
+  const ownTroops = `1 Platoon is advancing on your ${onePlSide > 0 ? 'right' : 'left'}. 3 Platoon (the company reserve) and Company HQ are with you at ${ref(start)}.`;
   const weather = pick([
     'Bright and dry; visibility good. Drones will fly.',
     'Low cloud and light rain; visibility about 800 m. Drones will struggle to fly.',
@@ -664,7 +667,6 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   events.sort(() => random() - 0.5).slice(0, nEv).forEach((e) => e());
   messages.sort((a, b) => a.time.localeCompare(b.time));
   // Friendly units and effects arrows (always shown).
-  const onePlSide = leftRight(other.centre) === 'left' ? 1 : -1; // 1 Pl is on the side away from the other enemy platoon
   const onePl = { x: start.x + v.x * onePlSide * spacing, y: start.y + v.y * onePlSide * spacing };
   const behind = (d: number, l = 0) => ({ x: start.x - u.x * d + v.x * l, y: start.y - u.y * d + v.y * l });
   const friendly: ScenarioMarkers['friendly'] = [
@@ -710,12 +712,21 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   );
   axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
   const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
-  const along2 = (l: number, f0: number, f1: number): Point[] => [f0, f1].map((f) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
   // The B/A boundary follows lines on the ground where it can (PO, 15 Nov
   // 2026): roads, tracks, streams, hedges, railways and wood edges, within
   // maxDev of the straight line, so it stays between the units either side.
-  const followGround = (boundaryLat: number, maxDev: number) => {
-    const [a, b] = along2(boundaryLat, -1200, bgObjFwd + 300);
+  // Your lane (PO, 15 Nov 2026: the enemy you are tasked against should lie mostly inside
+  // your boundaries): centred on you at the start line, then bending so that by the
+  // enemy's depth it is centred on that enemy (or on your objective, or the flank you screen).
+  const target = task === 'screen' ? [objective.point] : blocking.positions.map((x) => x.point);
+  const laneC1 = target.reduce((a2, q) => a2 + lat(q), 0) / target.length;
+  const laneF1 = Math.max(300, target.reduce((a2, q) => a2 + fwd(q), 0) / target.length);
+  const laneC = (f: number) => (f <= 0 ? 0 : f >= laneF1 ? laneC1 : (laneC1 * f) / laneF1);
+  const followGround = (offset: number, maxDev: number) => {
+    const nominal = (f: number) => laneC(f) + offset;
+    const f0 = -1200, f1 = bgObjFwd + 300;
+    const a = clampBox({ x: u.x * f0 + v.x * nominal(f0), y: u.y * f0 + v.y * nominal(f0) });
+    const b = clampBox({ x: u.x * f1 + v.x * nominal(f1), y: u.y * f1 + v.y * nominal(f1) });
     if (!lay) return { path: [a, b], follows: '' };
     const W = cg.width, Hh = cg.height;
     const woodEdge = (i: number) => {
@@ -736,7 +747,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     const cost = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const q = cellToPoint(cg, i % W, Math.floor(i / W));
-      const dev = Math.abs(lat(q) - boundaryLat);
+      const dev = Math.abs(lat(q) - nominal(fwd(q)));
       if (dev > maxDev) { cost[i] = Infinity; continue; }
       cost[i] = (featureAt(i) ? 0.15 : 1) + (dev / maxDev) ** 2 * 0.5;
     }
@@ -759,8 +770,9 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const boundary = followGround(onePlSide * spacing * 1.5, maxDev);
   const plBoundary = followGround(onePlSide * spacing * 0.5, maxDev);
   const bgBoundary = followGround(-onePlSide * spacing * 0.5, maxDev);
-  const lineLo = Math.min(-onePlSide * spacing * 0.5, aCoyLat + onePlSide * spacing) - 300;
-  const lineHi = Math.max(-onePlSide * spacing * 0.5, aCoyLat + onePlSide * spacing) + 300;
+  const lineEnds = [0, laneC1].flatMap((c0) => [c0 - onePlSide * spacing * 0.5, c0 + aCoyLat + onePlSide * spacing]);
+  const lineLo = Math.min(...lineEnds) - 300;
+  const lineHi = Math.max(...lineEnds) + 300;
   const control: ScenarioMarkers['control'] = [
     // B Coy / A Coy boundary; sides are [left, right] looking forward: B on our side, A on theirs.
     { kind: 'boundary', path: boundary.path, label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },

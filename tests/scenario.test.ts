@@ -106,3 +106,32 @@ describe('time allowed varies (PO, 15 Nov 2026)', () => {
     expect(mins.size).toBeGreaterThan(2);
   });
 });
+
+describe('your enemy lies mostly inside your boundaries (PO, 15 Nov 2026)', () => {
+  const u = { x: Math.sin((layout.advanceBearingDeg * Math.PI) / 180), y: Math.cos((layout.advanceBearingDeg * Math.PI) / 180) };
+  const v = { x: u.y, y: -u.x };
+  const fwd = (p: { x: number; y: number }) => p.x * u.x + p.y * u.y;
+  const lat = (p: { x: number; y: number }) => p.x * v.x + p.y * v.y;
+  /** The lateral position of a boundary line at a given distance forward. */
+  const latAt = (path: { x: number; y: number }[], f: number) => {
+    let best = path[0];
+    for (const q of path) if (Math.abs(fwd(q) - f) < Math.abs(fwd(best) - f)) best = q;
+    return lat(best);
+  };
+  for (const task of ['secure', 'neutralise', 'findFix'] as TaskType[])
+    it(`${task}: at least 60% of one forward enemy platoon is in your lane`, () => {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 7, task, info: 'rich', now, timeZone: 'UTC' });
+      const pl = s.markers.control.find((c) => c.label === '•••')!.path;
+      const bg = s.markers.control.find((c) => c.label === 'II')!.path;
+      const share = layout.platoons
+        .filter((p) => p.role === 'forward')
+        .map((p) => {
+          const inside = p.positions.filter((x) => {
+            const a = latAt(pl, fwd(x.point)), b = latAt(bg, fwd(x.point));
+            return lat(x.point) >= Math.min(a, b) && lat(x.point) <= Math.max(a, b);
+          });
+          return inside.length / p.positions.length;
+        });
+      expect(Math.max(...share)).toBeGreaterThanOrEqual(0.6);
+    });
+});
