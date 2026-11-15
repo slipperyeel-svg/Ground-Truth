@@ -468,7 +468,7 @@ function startWatching(): Promise<void> {
 
 // ---------- loading ground ----------
 function setBusy(busy: boolean) {
-  for (const id of ['btn-start-here', 'btn-start-map', 'btn-go-plan', 'btn-sc-develop', 'btn-sc-ds', 'btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new', 'btn-sc-new']) ($(id) as HTMLButtonElement).disabled = busy;
+  for (const id of ['btn-start-here', 'btn-go-plan', 'btn-sc-develop', 'btn-sc-ds', 'btn-here', 'btn-load-point', 'btn-vs-me', 'btn-problem', 'btn-features', 'btn-pt-problem', 'btn-pt-section', 'btn-sec-new', 'btn-pt-company', 'btn-co-new', 'btn-sc-new']) ($(id) as HTMLButtonElement).disabled = busy;
 }
 
 /** The ground detail chosen in the panel, unless a caller insists on one. */
@@ -791,6 +791,7 @@ document.querySelector<HTMLButtonElement>('[data-mode-tab="dev"]')!.hidden = !de
 const MODE_NAME: Record<Mode, string> = { problem: 'Problem', ds: 'DS', dev: 'Developer', settings: 'Settings' };
 function setMode(m: Mode) {
   mode = m;
+  if (m !== 'problem') closeStartPopup();
   document.body.dataset.mode = m;
   $('mode-name').textContent = `· ${MODE_NAME[m]}`;
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) b.classList.toggle('active', b.dataset.modeTab === m);
@@ -831,6 +832,7 @@ function updateStepbar() {
 }
 function setStage(st: Stage) {
   stage = st;
+  if (st !== 'start') closeStartPopup();
   $('panel').dataset.stage = st;
   for (const el of document.querySelectorAll<HTMLElement>('.stage')) el.classList.toggle('current', el.dataset.stage === st);
   if (st !== 'plan') planTool = null;
@@ -1603,6 +1605,36 @@ async function selectPoint(lat: number, lon: number) {
   ($('btn-pt-vs') as HTMLButtonElement).disabled = !inBox;
   $('point-block').hidden = false;
   status(`Selected ${ref.ref}`);
+  // On the Problem page, confirm on the map itself: one tap to choose, one to set (PO, 15 Nov 2026).
+  if (mode === 'problem' && stage === 'start') showStartPopup(lat, lon, gridRef(lat, lon, 3).ref, myFix ? parts[parts.length - 1] : '');
+}
+
+/** A small card on the map at the chosen place: its grid reference and "Set a problem here". */
+let startPopup: maplibregl.Popup | null = null;
+function closeStartPopup() {
+  startPopup?.remove();
+  startPopup = null;
+}
+function showStartPopup(lat: number, lon: number, ref: string, fromYou: string) {
+  closeStartPopup();
+  const div = document.createElement('div');
+  div.className = 'start-pop';
+  div.append(el('div', ref, 'gr'));
+  if (fromYou) div.append(el('div', fromYou.replace(/, grid bearing.*$/, ' from you'), 'detail'));
+  const go = el('button', 'Set a problem here', 'primary') as HTMLButtonElement;
+  go.addEventListener('click', () => {
+    closeStartPopup();
+    $('btn-pt-problem').click();
+  });
+  div.append(go);
+  startPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: '260px', className: 'start-popup', offset: 14 })
+    .setLngLat([lon, lat])
+    .setDOMContent(div)
+    .addTo(map);
+  startPopup.on('close', () => {
+    startPopup = null;
+    (map.getSource('tap') as GeoJSONSource).setData(EMPTY);
+  });
 }
 
 function clearPoint() {
@@ -1738,10 +1770,6 @@ $('btn-start-here').addEventListener('click', async () => {
     if (!boxCentredOn(p)) return;
   }
   await runScenario(Math.floor(Math.random() * 1e9));
-});
-$('btn-start-map').addEventListener('click', () => {
-  $('start-hint').textContent = 'Tap the map where the problem should be, then press "Set a problem here".';
-  status('Tap the map to choose the place');
 });
 $('btn-truth-export').addEventListener('click', () => $('btn-plan-export').click());
 

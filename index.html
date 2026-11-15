@@ -56,10 +56,9 @@
             <div class="label">Set a problem</div>
             <div class="row buttons">
               <button id="btn-start-here" class="primary">Problem where I stand</button>
-              <button id="btn-start-map">Problem at a point on the map</button>
               <button id="btn-resume" hidden>Resume my last problem</button>
             </div>
-            <p id="start-hint" class="detail"></p>
+            <p id="start-hint" class="detail">Or tap the map where you want the problem.</p>
             <details class="options">
               <summary>Problem options</summary>
               <div class="row selects">
@@ -99,12 +98,12 @@
       </div>
 
       <!-- Selected point: in the Problem page only "Set a problem here"; the rest are developer tools. -->
-      <div id="point-block" class="block" data-modes="problem dev" hidden>
+      <div id="point-block" class="block" data-modes="dev" hidden>
         <div class="label">Selected point</div>
         <div id="pt-ref" class="gr"></div>
         <div id="pt-detail" class="detail"></div>
         <div class="row buttons">
-          <button id="btn-pt-problem" class="primary" data-modes="problem dev">Set a problem here</button>
+          <button id="btn-pt-problem" class="primary" data-modes="dev">Set a problem here</button>
           <button id="btn-pt-company" data-modes="dev">Enemy company here</button>
           <button id="btn-pt-section" data-modes="dev">Enemy section here</button>
           <button id="btn-pt-vs" data-modes="dev">Viewshed from here</button>
