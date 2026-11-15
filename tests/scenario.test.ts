@@ -14,7 +14,7 @@ describe('platoon scenario (Moltke guidelines G1–G13)', () => {
     const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now, timeZone: 'Europe/London' });
     expect(s.you).toMatch(/You command 2 Platoon/); // G2
     expect(s.force.length).toBeGreaterThanOrEqual(3); // G3
-    expect(s.situation).toMatch(/advancing north/); // G4
+    expect(s.situation).toMatch(/advancing on 0000 mils|advancing on 6390 mils|advancing on 0010 mils/); // G4: grid bearing in mils
     expect(s.task_text.length).toBeGreaterThan(20);
     expect(s.enemy.length).toBeGreaterThan(0); // G5
     for (const e of s.enemy) expect(e.source.length).toBeGreaterThan(3);

@@ -10,12 +10,11 @@
  * trade-off: a covered route that saves exposure at the cost of time, or
  * mines on the obvious route.
  */
-import { compass16 } from './companyDefence';
 import { bearingVector, cellToPoint, distance, pointToCell, type Grid, type Point } from '../terrain/grid';
 import { localToLatLon } from '../terrain/elevation';
 import { viewshed, type Obstacles } from '../terrain/viewshed';
 import { slope as slopeOf } from '../terrain/slope';
-import { fromBNG, fromUTM, gridRef, inGreatBritain, toBNG, toUTM } from '../geo/gridref';
+import { fromBNG, fromUTM, gridMils, gridRef, inGreatBritain, milsText, toBNG, toUTM } from '../geo/gridref';
 import { latLonToLocal } from '../terrain/elevation';
 import { COVER, type FeatureLayers } from '../features/layers';
 import { costDistance, slopeOnlyGoing } from './approach';
@@ -166,8 +165,6 @@ function rng(seed: number) {
   };
 }
 
-/** The direction of advance as one of the 16 compass points (PO, 15 Nov 2026). */
-const dirOf = (bearing: number) => compass16(bearing);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`);
 
@@ -184,7 +181,9 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const v = { x: u.y, y: -u.x }; // to the right of the advance
   const fwd = (p: Point) => p.x * u.x + p.y * u.y;
   const lat = (p: Point) => p.x * v.x + p.y * v.y;
-  const dir = dirOf(L.advanceBearingDeg);
+  // The direction of advance as a grid bearing in mils (PO, 15 Nov 2026), e.g. "on 1590 mils".
+  const c0 = g.meta.centre;
+  const dir = `on ${c0 ? gridMils(L.advanceBearingDeg, c0.lat, c0.lon) : milsText(L.advanceBearingDeg)}`;
   const start = { x: 0, y: 0 };
 
   const ref = (p: Point, fig: 3 | 4 = 3) => {
@@ -661,7 +660,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   ];
   const coyMission = {
     secure: `B Coy is to break through the enemy's forward line on the main route and secure ${objective.name}, in order to let ${bg} pass ${dir} to ${bgObjName}.`,
-    neutralise: `B Coy is to destroy the enemy on the main route ${dir}, in order to open the way for ${bg} to ${bgObjName}.`,
+    neutralise: `B Coy is to destroy the enemy on the main route, in order to open the way for ${bg} to ${bgObjName}.`,
     findFix: `B Coy is to find and destroy the enemy's forward positions across the company's front, in order to open the way for ${bg} to ${bgObjName}.`,
     screen: `B Coy is to break through the enemy's forward line on the main route, in order to open the way for ${bg} to ${bgObjName}.`,
   }[task];
@@ -678,7 +677,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
         (bgType === 'light'
           ? `Light role infantry: three rifle companies on foot, with mortars, anti-tank and reconnaissance platoons. `
           : `Mechanised infantry in Boxer, with a squadron of Challenger 3 tanks, mortars and engineers. `) +
-        `Mission: ${bg} is to seize ${bgObjName} (${ref(bgObjective.point)}${bgObjOnMap ? '' : `, about ${km(bgObjFwd)} ${dir} of the start line, beyond this map`}), in order to allow the brigade to pass ${dir}. ` +
+        `Mission: ${bg} is to seize ${bgObjName} (${ref(bgObjective.point)}${bgObjOnMap ? '' : `, about ${km(bgObjFwd)} from the start line ${dir}, beyond this map`}), in order to allow the brigade to pass ${dir}. ` +
         `CO's intent: break the enemy's forward line quickly on the main route, before they can reinforce or bring artillery onto us; ` +
         `main effort B Coy; A Coy advances on B Coy's ${onePlSideWord} to fix the enemy there; C Coy, the battlegroup reserve, then passes through to ${bgObjName}. ` +
         `End state: the enemy ahead destroyed or withdrawn, the route ${dir} open, and ${bg} firm on ${bgObjName}.`,

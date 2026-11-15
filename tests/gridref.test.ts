@@ -79,3 +79,24 @@ describe('MGRS', () => {
     expect(toUTM(60.39, 5.32).zone).toBe(32); // Bergen
   });
 });
+
+describe('bearings in mils', async () => {
+  const { milsText, gridBearingDeg, gridMils } = await import('../src/geo/gridref');
+  it('gives NATO mils, 6400 to the circle, to the nearest 10', () => {
+    expect(milsText(0)).toBe('0000 mils');
+    expect(milsText(90)).toBe('1600 mils');
+    expect(milsText(22.5)).toBe('0400 mils');
+    expect(milsText(359.99)).toBe('0000 mils');
+    expect(milsText(-90)).toBe('4800 mils');
+  });
+  it('corrects true bearings for grid convergence on the National Grid', () => {
+    // On the central meridian (2°W) true and grid north agree.
+    expect(Math.abs(gridBearingDeg(90, 52, -2))).toBeCloseTo(90, 1);
+    // East of it, true north lies west of grid north: a true north bearing reads a little under 6400 mils.
+    const east = gridBearingDeg(0, 52.5, 1.5);
+    expect(east).toBeGreaterThan(355);
+    expect(east).toBeLessThan(359);
+    // Salisbury Plain: a few mils at most.
+    expect(gridMils(90, 51.25, -1.9)).toMatch(/^1600 mils$|^1590 mils$/);
+  });
+});

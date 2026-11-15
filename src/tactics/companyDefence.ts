@@ -19,6 +19,7 @@
  * Every placement is computed from the ground; weights and distances are
  * first figures for the PO to tune.
  */
+import { gridMils, milsText } from '../geo/gridref';
 import { bearingVector, distance, pointToCell, type Grid, type Mask, type Point } from '../terrain/grid';
 import { viewshed, type Obstacles } from '../terrain/viewshed';
 import { slope as slopeOf } from '../terrain/slope';
@@ -195,7 +196,9 @@ export const COMPASS16 = [
   'south', 'south-south-west', 'south-west', 'west-south-west', 'west', 'west-north-west', 'north-west', 'north-north-west',
 ];
 export const compass16 = (bearingDeg: number) => COMPASS16[Math.round((((bearingDeg % 360) + 360) % 360) / 22.5) % 16];
-const DIR = (bearing: number) => compass16(bearing);
+/** The advance as a grid bearing in mils (PO, 15 Nov 2026): "on 1590 mils". */
+let dirCentre: { lat: number; lon: number } | undefined;
+const DIR = (bearing: number) => `on ${dirCentre ? gridMils(bearing, dirCentre.lat, dirCentre.lon) : milsText(bearing)}`;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 interface Cand {
@@ -477,6 +480,7 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
 const nearestSide = (bearingDeg: number): Side => (['N', 'E', 'S', 'W'] as Side[])[Math.round((((bearingDeg % 360) + 360) % 360) / 90) % 4];
 
 export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
+  dirCentre = input.grid.meta.centre;
   const random = input.seed === undefined ? null : rng(input.seed);
   const chance = (k: OptionKey) => (random ? random() < OPTION_CHANCE[k] : false);
   const options: CompanyOptions = {

@@ -115,6 +115,6 @@ describe('any of the 16 compass points', () => {
     expect(L2!.advanceBearingDeg).toBe(22.5);
     // Every forward position lies ahead along the advance.
     for (const p of L2!.platoons.filter((q) => q.role === 'forward').flatMap((q) => q.positions)) expect(along(p.point, 22.5).f).toBeGreaterThan(300);
-    expect(L2!.reasons[0]).toMatch(/north-north-east/);
+    expect(L2!.reasons[0]).toMatch(/on 0400 mils/);
   });
 });

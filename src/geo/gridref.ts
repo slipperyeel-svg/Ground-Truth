@@ -131,3 +131,36 @@ export function gridRef(lat: number, lon: number, figuresEach: 3 | 4 = 3): { sys
   }
   return { system: 'MGRS', ref: mgrsGridRef(lat, lon, figuresEach) ?? 'off grid' };
 }
+
+// ---------- Bearings ----------
+
+/**
+ * A true bearing (degrees from true north, as the app's local frame uses) as
+ * a grid bearing: corrected for grid convergence on the British National Grid
+ * in Great Britain, or the UTM zone elsewhere. Measured by projecting a point
+ * and another just north of it.
+ */
+export function gridBearingDeg(trueDeg: number, lat: number, lon: number): number {
+  const gb = inGreatBritain(lat, lon);
+  const at = (la: number) => {
+    if (gb) {
+      const b = toBNG(la, lon);
+      return [b.easting, b.northing];
+    }
+    const u = toUTM(la, lon);
+    return [u.easting, u.northing];
+  };
+  const [e0, n0] = at(lat);
+  const [e1, n1] = at(lat + 0.001);
+  const trueNorthOnGrid = (Math.atan2(e1 - e0, n1 - n0) * 180) / Math.PI;
+  return (((trueDeg + trueNorthOnGrid) % 360) + 360) % 360;
+}
+
+/** NATO mils (6400 to the circle), rounded to the nearest 10, as "1590 mils". */
+export function milsText(deg: number): string {
+  const m = (Math.round((((deg % 360) + 360) % 360) * (6400 / 360) / 10) * 10) % 6400;
+  return `${String(m).padStart(4, '0')} mils`;
+}
+
+/** A true bearing as a grid bearing in mils, e.g. "1590 mils". */
+export const gridMils = (trueDeg: number, lat: number, lon: number) => milsText(gridBearingDeg(trueDeg, lat, lon));
