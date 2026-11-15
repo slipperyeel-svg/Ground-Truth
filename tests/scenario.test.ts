@@ -26,7 +26,8 @@ describe('platoon scenario (Moltke guidelines G1–G13)', () => {
     expect(s.questions.length).toBeGreaterThanOrEqual(2); // G10
     expect(s.questions.length).toBeLessThanOrEqual(3);
     expect(s.phase2.messages.length).toBeGreaterThan(0); // G11
-    expect(s.ds.join(' ')).toMatch(/more than one sound answer/); // G13
+    expect(s.ds.join(' ')).toMatch(/no school solution/); // G13
+    expect(s.ds.join(' ')).not.toMatch(/best covered route|quality gate/i); // never shown as an answer
     // G1: the visible problem is short.
     const words = [s.you, s.situation, s.task_text, ...s.enemy.map((e) => e.text), s.enemyGaps, s.time, ...s.ground, s.ownTroops, s.weather, ...s.questions]
       .join(' ').split(/\s+/).length;

@@ -129,7 +129,7 @@
           <p id="sc-allowed" class="detail"></p>
           <div class="row buttons">
             <button id="btn-sc-develop" class="primary">The situation develops</button>
-            <button id="btn-sc-ds">Show DS solution</button>
+            <button id="btn-sc-ds">Reveal the ground truth</button>
           </div>
           <div id="sc-phase2" hidden>
             <h3>The situation develops</h3>
@@ -138,7 +138,8 @@
             <ol id="sc-p2q"></ol>
           </div>
           <div id="sc-ds" hidden>
-            <h3>DS solution (computed facts)</h3>
+            <h3>Ground truth (computed facts)</h3>
+            <p class="detail">There is no school solution. These are the facts of the ground and the enemy; judge your own decision and orders against them.</p>
             <div class="legend wrap">
               <span><span class="sw" style="background:#c00"></span> enemy position</span>
               <span><span class="sw" style="background:#fff;border:2px dashed #c00"></span> dummy</span>
@@ -146,7 +147,6 @@
               <span><span class="sw" style="background:rgba(200,60,0,0.7)"></span> interlocking fire</span>
               <span><span class="sw" style="background:rgba(40,90,220,0.55)"></span> dead ground</span>
               <span><span class="sw" style="background:#c62828"></span> obvious route</span>
-              <span><span class="sw" style="background:#2e7d32"></span> best covered route</span>
             </div>
             <ul id="sc-ds-list"></ul>
           </div>
@@ -220,7 +220,7 @@
           <h3>Time allowed</h3>
           <p id="sec-time"></p>
           <div id="sec-ds" hidden>
-            <h3>DS notes (computed facts)</h3>
+            <h3>Ground truth (computed facts)</h3>
             <ul id="sec-ds-list"></ul>
             <div class="legend wrap">
               <span><span class="sw enemy"></span> enemy fire team</span>
@@ -238,7 +238,7 @@
         <div class="label">Tactical problem</div>
         <div class="row buttons">
           <button id="btn-problem" class="primary">Set a problem</button>
-          <button id="btn-ds" hidden>Show DS solution</button>
+          <button id="btn-ds" hidden>Reveal the ground truth</button>
         </div>
         <div id="problem" hidden>
           <h2 id="pr-title"></h2>
@@ -251,7 +251,7 @@
           <h3>Time allowed</h3>
           <p id="pr-time"></p>
           <div id="pr-ds" hidden>
-            <h3>DS notes (computed facts)</h3>
+            <h3>Ground truth (computed facts)</h3>
             <ul id="pr-ds-list"></ul>
             <div class="legend"><span class="sw nai"></span> NAI 1 <span class="sw enemy"></span> enemy OP <span class="sw own"></span> own OP <span class="sw guns"></span> gun area</div>
           </div>

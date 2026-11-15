@@ -249,7 +249,7 @@ map.on('load', () => {
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
   map.addLayer({
-    id: 'scenario-routes', type: 'line', source: 'scenario', filter: ['match', ['get', 'kind'], ['direct', 'covered'], true, false],
+    id: 'scenario-routes', type: 'line', source: 'scenario', filter: ['==', ['get', 'kind'], 'direct'],
     paint: {
       'line-color': ['match', ['get', 'kind'], 'direct', '#c62828', '#2e7d32'],
       'line-width': 3,
@@ -679,7 +679,7 @@ function showScenarioDS(show: boolean) {
   if (!box || !v?.company || !v.scenario) return;
   const c = v.company;
   $('sc-ds').hidden = !show;
-  ($('btn-sc-ds') as HTMLButtonElement).textContent = show ? 'Hide DS solution' : 'Show DS solution';
+  ($('btn-sc-ds') as HTMLButtonElement).textContent = show ? 'Hide the ground truth' : 'Reveal the ground truth';
   (map.getSource('company-zones') as ImageSource).updateImage({
     url: show ? companyZonesImage(c.maskWidth!, c.maskHeight!, c.killZone!, c.deadGround!, c.mines ?? null) : BLANK,
     coordinates: boxCorners(box),
@@ -940,7 +940,7 @@ async function setProblem() {
     $('pr-data').textContent = t.dataNote;
     $('problem').hidden = false;
     $('btn-ds').hidden = false;
-    ($('btn-ds') as HTMLButtonElement).textContent = 'Show DS solution';
+    ($('btn-ds') as HTMLButtonElement).textContent = 'Reveal the ground truth';
     (map.getSource('problem') as GeoJSONSource).setData(problemGeoJSON(box.centre, problem.nai!, problem.route ?? []) as never);
     status(`Problem set (${(problem.timeMs / 1000).toFixed(1)} s)`);
   } catch (err) {
@@ -956,7 +956,7 @@ $('btn-ds').addEventListener('click', () => {
   const showing = !$('pr-ds').hidden;
   $('pr-ds').hidden = showing;
   (map.getSource('ds') as GeoJSONSource).setData(showing ? EMPTY : (dsGeoJSON(box.centre, problem.ds) as never));
-  ($('btn-ds') as HTMLButtonElement).textContent = showing ? 'Show DS solution' : 'Hide DS solution';
+  ($('btn-ds') as HTMLButtonElement).textContent = showing ? 'Reveal the ground truth' : 'Hide the ground truth';
 });
 
 // ---------- viewshed ----------

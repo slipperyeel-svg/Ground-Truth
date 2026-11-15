@@ -85,4 +85,4 @@ problems"). Each sequel:
 
 **G12. Orders standard for the DS:** intent clear; nothing the section commanders can arrange themselves; no reasons in the order itself.
 
-**G13. DS solution in Moltke's manner**, from computed facts only (core principle 1): the ground, the enemy's possible courses, the aim; a decision; brief dispositions. Accept more than one sound answer and name the real differences; criticise over-detail and failure to grasp the situation.
+**G13. No school solution** (PO, 15 Nov 2026, DECISIONS.md 149). After the user has decided, the app reveals the **ground truth** from computed facts only (core principle 1): where the enemy really was, their fire and dead ground, and plain facts of the ground. It never presents a recommended answer or a "best" route. Feedback (later, M5) is a short critique of the user's own reasoning, decision and orders, in the manner of Moltke's summings-up: accept more than one sound answer, criticise over-detail and failure to grasp the situation.

@@ -126,7 +126,7 @@ export interface PlatoonScenario {
   timeAllowed: string;
   /** Phase 2: the situation develops (G11). */
   phase2: { time: string; messages: { time: string; from: string; text: string }[]; questions: string[] };
-  /** DS solution facts (G13). */
+  /** Ground truth facts, revealed after the user decides (G13: no school solution). */
   ds: string[];
   /** The objective or focus point and computed routes, for the DS map. */
   objective: Point;
@@ -666,23 +666,20 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   for (const p of L.platoons) ds.push(`${p.name}: ${posList(p.positions, p.name)}.`);
   if (L.hq) ds.push(`Coy HQ ${ref(L.hq.point, 4)}.`);
   if (L.dummies.length) ds.push(`Dummies (no enemy): ${L.dummies.map((d) => ref(d.point)).join('; ')}.`);
-  if (chosen.direct && chosen.covered) {
-    const d = chosen.direct, c = chosen.covered;
+  // Ground truth only: the obvious route is a fact of the ground. The computed
+  // best covered route and the gate's reasoning are not shown, so this never
+  // reads as a school solution (PO, 15 Nov 2026); the gate still uses them.
+  if (chosen.direct) {
+    const d = chosen.direct;
     ds.push(
-      `The obvious route to ${objective.name}: ${km(d.lengthM)}, ${pct(d.underFire)} of it under enemy fire` +
+      `The obvious route to ${objective.name} (the easiest going): ${km(d.lengthM)}, ${pct(d.underFire)} of it under enemy fire` +
         `${d.minesCrossed ? `, crossing mines` : ''}.`,
     );
-    ds.push(
-      `The best covered route (computed): ${km(c.lengthM)}, ${pct(c.underFire)} under enemy fire` +
-        `${c.minesCrossed ? `, crossing mines` : ''}` +
-        (L.gaps[0] ? `; it passes within ${km(Math.min(...c.path.map((q) => distance(q, L.gaps[0].centre))))} of the gap between the forward platoons.` : '.'),
-    );
   }
-  ds.push(`Quality gate: ${chosen.ok ? 'passed' : 'weak'}: ${chosen.why}`);
+  if (L.gaps[0]) ds.push(`The gap between the enemy forward platoons is about ${km(L.gaps[0].widthM)} wide, centred on ${ref(L.gaps[0].centre)}.`);
   ds.push(
-    'There is more than one sound answer. What matters is whether the plan reads the ground: where the enemy can and cannot see, ' +
-      'whether it uses the gap and dead ground rather than running into the enemy\'s fire, and whether the orders state the intent ' +
-      'and leave to the section commanders what they can arrange themselves.',
+    'There is no school solution. Judge your decision by the ground and the enemy as they really were: what the enemy could and ' +
+      'could not see, where their fire fell, and whether your orders gave your intent and left your section commanders free to act on it.',
   );
 
   const m = g.meta;

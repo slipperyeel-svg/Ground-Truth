@@ -237,15 +237,18 @@ export function companyZonesImage(width: number, height: number, killZone: Uint8
 
 // ---------- infantry scenario ----------
 
-/** The obvious route (red, dashed), the best covered route (green) and the objective (blue ring). */
+/**
+ * The obvious route (red, dashed) and the objective (blue ring). The computed
+ * best covered route is not drawn: it is used only by the quality gate, so the
+ * reveal never reads as a school solution (PO, 15 Nov 2026).
+ */
 export function scenarioGeoJSON(
   centre: LL,
-  s: { objective: P; direct: { path: P[] } | null; covered: { path: P[] } | null },
+  s: { objective: P; direct: { path: P[] } | null },
 ) {
   const features: object[] = [
     { type: 'Feature', properties: { kind: 'objective', label: 'Objective' }, geometry: { type: 'Point', coordinates: ll(centre, s.objective) } },
   ];
   if (s.direct) features.push({ type: 'Feature', properties: { kind: 'direct' }, geometry: { type: 'LineString', coordinates: s.direct.path.map((p) => ll(centre, p)) } });
-  if (s.covered) features.push({ type: 'Feature', properties: { kind: 'covered' }, geometry: { type: 'LineString', coordinates: s.covered.path.map((p) => ll(centre, p)) } });
   return { type: 'FeatureCollection' as const, features };
 }
