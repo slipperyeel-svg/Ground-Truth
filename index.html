@@ -13,6 +13,12 @@
     <div id="map">
       <div id="crosshair" hidden aria-hidden="true"></div>
       <button id="btn-crosshair-select" class="primary floating" hidden>Select crosshair point</button>
+      <!-- Shown while marking the plan: what a tap will do, with Undo and Done to hand. -->
+      <div id="map-toolbar" hidden>
+        <span id="map-toolbar-text"></span>
+        <button id="btn-tb-undo">Undo</button>
+        <button id="btn-tb-done" class="primary">Done</button>
+      </div>
     </div>
 
     <header id="topbar">
@@ -143,34 +149,31 @@
             <div class="block">
           <div id="plan-block">
             <h3>Your plan</h3>
-            <p class="detail">Mark your plan on the map: tap to place it, or walk to the spot and mark where you stand. It is kept on this phone. Draw a route for each section and for Platoon HQ: the situation develops from the routes you mark.</p>
-            <div class="row selects">
-              <label>Route for
-                <select id="sel-route">
-                  <option>1 Sect</option>
-                  <option>2 Sect</option>
-                  <option>3 Sect</option>
-                  <option>Pl HQ</option>
-                </select>
-              </label>
-              <label>Position
-                <select id="sel-mark">
-                  <option>OP</option>
-                  <option>Fire support</option>
-                  <option>Attack by fire</option>
-                  <option>FUP</option>
-                  <option>Assault position</option>
-                  <option>Cut-off</option>
-                  <option>Pl HQ</option>
-                  <option>RV</option>
-                  <option>Other</option>
-                </select>
-              </label>
+            <p class="detail">Draw a route for each section and for Platoon HQ (the situation develops from them), then add your positions. Tap a button, then tap the map; or walk to the spot and use "Mark where I stand". It is kept on this phone.</p>
+            <div class="label">Routes</div>
+            <div class="route-row">
+              <button class="route-btn" data-who="1 Sect">1 Sect</button>
+              <button class="route-btn" data-who="2 Sect">2 Sect</button>
+              <button class="route-btn" data-who="3 Sect">3 Sect</button>
+              <button class="route-btn" data-who="Pl HQ">Pl HQ</button>
             </div>
-            <div class="row buttons">
-              <button id="btn-plan-route">Draw route</button>
-              <button id="btn-plan-mark">Mark a position</button>
+            <div class="label">Positions</div>
+            <div class="pos-palette">
+              <button class="pos-btn" data-kind="OP"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4 L32 24 L8 24 Z"/></svg><span>OP</span></button>
+              <button class="pos-btn" data-kind="Fire support"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 18 H32 M8 18 L3 8 M32 18 L37 8 M8 18 L4 24 M32 18 L36 24"/><path d="M1 11 L3 8 L6 10 M34 10 L37 8 L39 11"/></svg><span>Fire support (SBF)</span></button>
+              <button class="pos-btn" data-kind="Attack by fire"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 24 L10 18 H30 L35 24 M20 18 V4 M16 8 L20 4 L24 8"/></svg><span>Attack by fire (ABF)</span></button>
+              <button class="pos-btn" data-kind="FUP"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="32" height="16" rx="8"/><text x="20" y="18" font-size="8" fill="#0a3fa8" stroke="none" text-anchor="middle" font-family="sans-serif" font-weight="700">FUP</text></svg><span>FUP</span></button>
+              <button class="pos-btn" data-kind="Assault position"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="36" height="16" rx="8"/><text x="20" y="18" font-size="7" fill="#0a3fa8" stroke="none" text-anchor="middle" font-family="sans-serif" font-weight="700">ASLT</text></svg><span>Assault position</span></button>
+              <button class="pos-btn" data-kind="Cut-off"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M26 4 V24 M26 14 H6"/><text x="12" y="11" font-size="8" fill="#0a3fa8" stroke="none" font-family="sans-serif" font-weight="700">B</text></svg><span>Cut-off</span></button>
+              <button class="pos-btn" data-kind="Pl HQ"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="4" width="22" height="14" fill="#bfe6f5"/><path d="M9 4 L31 18 M31 4 L9 18 M9 18 V26"/></svg><span>Pl HQ</span></button>
+              <button class="pos-btn" data-kind="RV"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 H28 V16 L20 25 L12 16 Z" fill="#fff"/><text x="20" y="13" font-size="8" fill="#0a3fa8" stroke="none" text-anchor="middle" font-family="sans-serif" font-weight="700">RV</text></svg><span>RV</span></button>
+              <button class="pos-btn" data-kind="Other"><svg viewBox="0 0 40 28" width="40" height="28" aria-hidden="true" fill="none" stroke="#0a3fa8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 H28 V16 L20 25 L12 16 Z" fill="#fff"/><text x="20" y="13" font-size="8" fill="#0a3fa8" stroke="none" text-anchor="middle" font-family="sans-serif" font-weight="700">PT</text></svg><span>Other point</span></button>
             </div>
+            <!-- The current choices (set by the buttons above). -->
+            <select id="sel-route" hidden><option>1 Sect</option><option>2 Sect</option><option>3 Sect</option><option>Pl HQ</option></select>
+            <select id="sel-mark" hidden><option>OP</option><option>Fire support</option><option>Attack by fire</option><option>FUP</option><option>Assault position</option><option>Cut-off</option><option>Pl HQ</option><option>RV</option><option>Other</option></select>
+            <button id="btn-plan-route" hidden>Draw route</button>
+            <button id="btn-plan-mark" hidden>Mark a position</button>
             <div class="row buttons">
               <button id="btn-plan-here">Mark where I stand</button>
               <button id="btn-plan-undo">Undo</button>
@@ -194,6 +197,7 @@
             <h3>The situation develops</h3>
             <p id="sc-p2time"></p>
             <ul id="sc-p2msgs" class="messages"></ul>
+            <p id="sc-p2pos" class="detail"></p>
             <ol id="sc-p2q"></ol>
             <div id="plan-answers2"></div>
           </div>

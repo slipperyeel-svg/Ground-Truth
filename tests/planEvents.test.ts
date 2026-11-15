@@ -56,3 +56,23 @@ describe('the situation develops from the plan', () => {
     expect(d.messages.some((m) => m.from === '2 Section' && /fire from about/.test(m.text))).toBe(true);
   });
 });
+
+describe('where each element is when the situation develops', () => {
+  const target = L.platoons.flatMap((p) => p.positions).find((x) => x.kind !== 'outpost')!.point;
+  it('halts the element in contact and moves the others on at 2 km/h', () => {
+    const d = developFromPlan(
+      ground, null, L,
+      { routes: [{ who: '1 Section', points: [{ x: 0, y: 0 }, target] }, { who: '2 Section', points: [{ x: -1500, y: -1700 }, { x: 1500, y: -1700 }] }], positions: [] },
+      start, ref, hhmm,
+    );
+    expect(d.asAt).toMatch(/^\d{4}$/);
+    const one = d.elements.find((e) => e.who === '1 Section')!;
+    const two = d.elements.find((e) => e.who === '2 Section')!;
+    expect(one.state).toBe('in contact');
+    expect(two.state).toBe('moving');
+    // 2 Section has walked as far along its route as 1 Section had when it was fired on.
+    const walked1 = Math.hypot(one.point.x, one.point.y);
+    const walked2 = two.point.x + 1500;
+    expect(Math.abs(walked1 - walked2)).toBeLessThan(25);
+  });
+});

@@ -649,8 +649,18 @@ function renderSituation() {
   const m = s.markers;
   const units: object[] = [];
   const graphics: object[] = [];
+  // Once the situation has developed, your own platoon is shown by its sections where they now are.
+  const elements = phase2Shown ? (plan.developed?.elements ?? []) : [];
   for (const f of m.friendly) {
+    if (f.own && elements.length) continue;
     units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq, kind: f.kind }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
+  }
+  const ownKind = m.friendly.find((f) => f.own)?.kind ?? 'infantry';
+  for (const e of elements) {
+    const hq = /HQ/.test(e.who);
+    const num = e.who.match(/^(\d)/)?.[1] ?? '';
+    const short = { 'in contact': 'contact', 'at mines': 'mines', 'under shellfire': 'shelled', moving: '', 'at the end of its route': '' }[e.state];
+    units.push(unitFeature(e.point, { identity: 'friend', echelon: hq ? 'platoon' : 'section', hq, kind: ownKind }, hq ? { designation: '2', higher: 'B' } : { designation: num, higher: '2' }, short));
   }
   // No axis arrows or task graphics: they cluttered the map (PO, 15 Nov 2026). Objectives,
   // the boundary, start line and phase line stay; the task is in the text.
@@ -945,6 +955,14 @@ function showDeveloped(d: Plan.PlanState['developed'] & object) {
   s.markers.minefields = [...s.markers.minefields.filter((x) => x.phase === 1), ...d.minefields.map((x) => ({ ...x, phase: 2 as const }))];
   $('sc-p2time').textContent = d.time;
   $('sc-p2msgs').replaceChildren(...d.messages.map((m) => el('li', `${m.time}, from ${m.from}: "${m.text}"`)));
+  // Where each section and Pl HQ is now, as shown on the map.
+  $('sc-p2pos').textContent = d.elements?.length
+    ? `Your platoon at ${d.asAt} (shown on the map): ` +
+      d.elements.map((e) => {
+        const ll = localToLatLon(box!.centre, e.point.x, e.point.y);
+        return `${e.who} at ${gridRef(ll.lat, ll.lon, 3).ref}, ${e.state}`;
+      }).join('; ') + '.'
+    : '';
   $('sc-phase2').hidden = false;
   phase2Shown = true;
   renderSituation();
@@ -1061,6 +1079,26 @@ function renderPlan() {
   ($('sel-mark') as HTMLSelectElement).disabled = locked;
   ($('sel-route') as HTMLSelectElement).disabled = locked || planTool === 'route';
   for (const t of document.querySelectorAll<HTMLTextAreaElement>('#plan-answers textarea, #plan-answers2 textarea')) t.readOnly = locked;
+  // Route buttons (✓ once drawn) and the palette of positions; the bar over the map while marking.
+  const markKind = ($('sel-mark') as HTMLSelectElement).value;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.route-btn')) {
+    const w = b.dataset.who as Plan.RouteWho;
+    b.classList.toggle('done', plan.routes[w].length >= 2);
+    b.classList.toggle('active', planTool === 'route' && w === ($('sel-route') as HTMLSelectElement).value);
+    b.disabled = locked;
+  }
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.pos-btn')) {
+    b.classList.toggle('active', planTool === 'mark' && b.dataset.kind === markKind);
+    b.disabled = locked;
+  }
+  const drawing = !!planTool && mode === 'problem' && !locked;
+  $('map-toolbar').hidden = !drawing;
+  if (drawing) {
+    const w = ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho;
+    const n = plan.routes[w].length;
+    $('map-toolbar-text').textContent =
+      planTool === 'route' ? `${Plan.WHO_NAME[w]} route: tap each point in order (${n} so far)` : `Tap the map to place: ${markKind === 'Other' ? 'a point' : markKind}`;
+  }
   $('btn-plan-route').classList.toggle('active', planTool === 'route');
   $('btn-plan-mark').classList.toggle('active', planTool === 'mark');
   const who = ($('sel-route') as HTMLSelectElement).value as Plan.RouteWho;
@@ -1134,6 +1172,27 @@ $('btn-plan-mark').addEventListener('click', () => {
   renderPlan();
 });
 $('sel-mark').addEventListener('change', () => renderPlan());
+// Route buttons: tap to draw that element's route; tap again (or Done) to finish.
+for (const b of document.querySelectorAll<HTMLButtonElement>('.route-btn'))
+  b.addEventListener('click', () => {
+    const sel = $('sel-route') as HTMLSelectElement;
+    planTool = planTool === 'route' && sel.value === b.dataset.who ? null : 'route';
+    sel.value = b.dataset.who!;
+    renderPlan();
+  });
+// Position palette: tap a symbol, then tap the map.
+for (const b of document.querySelectorAll<HTMLButtonElement>('.pos-btn'))
+  b.addEventListener('click', () => {
+    const sel = $('sel-mark') as HTMLSelectElement;
+    planTool = planTool === 'mark' && sel.value === b.dataset.kind ? null : 'mark';
+    sel.value = b.dataset.kind!;
+    renderPlan();
+  });
+$('btn-tb-undo').addEventListener('click', () => $('btn-plan-undo').click());
+$('btn-tb-done').addEventListener('click', () => {
+  planTool = null;
+  renderPlan();
+});
 $('sel-route').addEventListener('change', () => renderPlan());
 $('btn-plan-undo').addEventListener('click', () => {
   Plan.undo(plan);

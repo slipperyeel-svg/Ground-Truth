@@ -53,9 +53,17 @@ export interface DevelopedSituation {
   minefields: { outline: Point[]; label: string }[];
   /** Where the platoon is when the situation develops (the lead element). */
   reached: Point;
+  /**
+   * Where each element is when the situation develops (PO, 15 Nov 2026): halted
+   * where something happened to it, otherwise as far along its route as 2 km/h
+   * has taken it.
+   */
+  elements: { who: string; point: Point; state: 'in contact' | 'at mines' | 'under shellfire' | 'moving' | 'at the end of its route' }[];
+  /** The time the positions are given for, e.g. "0749". */
+  asAt: string;
 }
 
-type Ev = { atM: number; point: Point; apply: (msgTime: string) => void; kind?: 'fires' };
+type Ev = { atM: number; point: Point; apply: (msgTime: string) => void; kind?: 'fires'; /** The element it happens to: it halts there. */ who?: string; stop?: 'in contact' | 'at mines' | 'under shellfire' };
 
 export function developFromPlan(
   grid: Grid,
@@ -101,7 +109,7 @@ export function developFromPlan(
   if (!routes.length) throw new Error('No route marked');
 
   const lastRoute = routes[routes.length - 1];
-  const out: DevelopedSituation = { time: '', messages: [], sightings: [], minefields: [], reached: lastRoute.points[lastRoute.points.length - 1] };
+  const out: DevelopedSituation = { time: '', messages: [], sightings: [], minefields: [], reached: lastRoute.points[lastRoute.points.length - 1], elements: [], asAt: '' };
   const events: (Ev & { route: boolean })[] = [];
 
   for (const r of routes) {
@@ -115,7 +123,7 @@ export function developFromPlan(
       const outpost = firing.find((e) => e.kind === 'outpost');
       const shooter = outpost ?? [...firing].sort((a, b) => distance(a.point, s.p) - distance(b.point, s.p))[0];
       events.push({
-        route: true,
+        route: true, who: r.who, stop: 'in contact',
         atM: s.m,
         point: s.p,
         apply: (t) => {
@@ -141,7 +149,7 @@ export function developFromPlan(
       });
       if (hit)
         events.push({
-          route: true,
+          route: true, who: r.who, stop: 'at mines',
           atM: hit.m,
           point: hit.p,
           apply: (t) => {
@@ -164,7 +172,7 @@ export function developFromPlan(
         inView = seen ? inView + C.stepM * 5 : 0;
         if (inView >= C.exposedForFiresM) {
           events.push({
-            route: true,
+            route: true, who: r.who, stop: 'under shellfire',
             kind: 'fires',
             atM: s.m,
             point: s.p,
@@ -251,7 +259,23 @@ export function developFromPlan(
 
   // Where the lead element is: the furthest point reached on the route by the first route event.
   out.reached = firstRoute.point;
-  const nowT = timeAt(Math.max(...chosen.map((e) => e.atM)));
+  const nowM = Math.max(...chosen.map((e) => e.atM));
+  const nowT = timeAt(nowM);
   out.time = `${hhmm(nowT)}. Your platoon moved off at ${hhmm(new Date(moveOff))} by the routes you marked.`;
+
+  // Where each element is now: halted where a reported event struck it, else
+  // as far along its route as the time allows (all moved off together at 2 km/h).
+  out.asAt = hhmm(nowT);
+  for (const r of routes) {
+    // The latest thing that happened to it: where it is now (it may have gone on after being shelled).
+    const hit = chosen.filter((e) => e.who === r.who && e.stop && e.atM <= nowM).sort((a, b) => b.atM - a.atM)[0];
+    if (hit) {
+      out.elements.push({ who: r.who, point: hit.point, state: hit.stop ?? 'in contact' });
+      continue;
+    }
+    const end = r.samples[r.samples.length - 1];
+    const at = r.samples.find((x) => x.m >= nowM) ?? end;
+    out.elements.push({ who: r.who, point: at.p, state: at === end && end.m <= nowM ? 'at the end of its route' : 'moving' });
+  }
   return out;
 }
