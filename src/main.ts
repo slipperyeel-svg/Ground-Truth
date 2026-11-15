@@ -321,6 +321,11 @@ map.on('load', () => {
       'line-width': ['match', ['get', 'kind'], 'axis', 2, 2.5],
     },
   });
+  // Echelon dots on a platoon boundary.
+  map.addLayer({
+    id: 'graphics-dots', type: 'fill', source: 'graphics', filter: ['==', ['get', 'kind'], 'dot'],
+    paint: { 'fill-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'] },
+  });
   // Planned or suspected (APP-6): a dashed outline.
   map.addLayer({
     id: 'graphics-dashed', type: 'line', source: 'graphics',
@@ -672,7 +677,8 @@ function renderSituation() {
   // the boundary, start line and phase line stay; the task is in the text.
   for (const l of m.control) graphics.push(...controlLine(c, l.kind, l.path, l.label, l.sides));
   if (m.bgObjective.onMap) graphics.push(...objectiveGraphic(c, m.bgObjective.point, 250, m.bgObjective.name));
-  if (m.task.kind !== 'screen') graphics.push(...objectiveGraphic(c, m.task.objective, 150, 'OBJ'));
+  // Your objective, by its codename (secure and neutralise; find-and-fix and screen have no objective to draw).
+  if (m.task.code) graphics.push(...objectiveGraphic(c, m.task.objective, 150, m.task.code));
 
   if (dsShown && scenario?.company?.platoons) {
     const co = scenario.company;

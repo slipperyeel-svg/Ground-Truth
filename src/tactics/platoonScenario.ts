@@ -75,7 +75,7 @@ export interface ScenarioMarkers {
   /** Effects arrows (axes of advance), always shown. */
   axes: { label: string; path: Point[]; own: boolean }[];
   /** The task graphic on the objective. */
-  task: { kind: TaskType; objective: Point; from: Point; across: Point; label: string };
+  task: { kind: TaskType; objective: Point; from: Point; across: Point; label: string; /** Your objective's codename, e.g. "OBJ KESTREL" (secure and neutralise only). */ code?: string };
   /** Enemy the scenario says has been seen: shown as suspected, in phase 1 or once the situation develops. */
   sightings: { phase: 1 | 2; point: Point; echelon: 'team' | 'section' | 'platoon'; label: string; dummy?: boolean }[];
   /** A suspected minefield outline, if reported (phase 1) or found (phase 2). */
@@ -95,6 +95,12 @@ export const BATTALIONS = [
   { short: '3 FENLAND', full: '3rd Battalion, The Fenland Light Infantry' },
 ];
 const OBJ_NAMES = ['HAWK', 'FALCON', 'KESTREL', 'MERLIN', 'HARRIER', 'OSPREY'];
+/**
+ * Frontage of a platoon in the attack, metres: wider when mechanised (PO, 15 Nov
+ * 2026: give each platoon more space). First figures; PO to confirm. Boundaries
+ * fall halfway between neighbouring platoons; A Coy sits beyond 1 Pl.
+ */
+export const FRONTAGE = { light: 800, mechanised: 1200 };
 const PL_NAMES = ['OAK', 'ASH', 'ELM', 'BIRCH', 'ROWAN', 'HAZEL'];
 
 export interface PlatoonScenario {
@@ -379,6 +385,10 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const neighbour = pick2(BATTALIONS.filter((b) => b !== bn));
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
   const plName = `PL ${pick2(PL_NAMES)}`;
+  // Your own objective gets a codename too (PO, 15 Nov 2026): "OBJ KESTREL (the track junction area at …)".
+  const objCode = task === 'secure' || task === 'neutralise' ? `OBJ ${pick2(OBJ_NAMES.filter((n) => `OBJ ${n}` !== bgObjName))}` : '';
+  if (objCode) objective.name = `${objCode} (${objective.name})`;
+  const spacing = FRONTAGE[bgType];
   const bg = `${bn.short} BG`;
   const infKind = bgType === 'mechanised' ? 'mechanisedInfantry' as const : 'infantry' as const;
   const you = `You command 2 Platoon, B Company, ${bn.full}${bgType === 'mechanised' ? ' (mechanised, in Boxer)' : ''}. Your company commander is with Company HQ.`;
@@ -584,7 +594,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   messages.sort((a, b) => a.time.localeCompare(b.time));
   // Friendly units and effects arrows (always shown).
   const onePlSide = leftRight(other.centre) === 'left' ? 1 : -1; // 1 Pl is on the side away from the other enemy platoon
-  const onePl = { x: start.x + v.x * onePlSide * 500, y: start.y + v.y * onePlSide * 500 };
+  const onePl = { x: start.x + v.x * onePlSide * spacing, y: start.y + v.y * onePlSide * spacing };
   const behind = (d: number, l = 0) => ({ x: start.x - u.x * d + v.x * l, y: start.y - u.y * d + v.y * l });
   const friendly: ScenarioMarkers['friendly'] = [
     { label: '2 Pl (you)', designation: '2', higher: 'B', point: start, echelon: 'platoon', own: true, kind: infKind },
@@ -607,6 +617,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     from: axes[0].path[1],
     across: v,
     label: { secure: 'S', neutralise: 'N', findFix: 'F', screen: 'S' }[task],
+    code: objCode || undefined,
   };
 
   // ---- Friendly forces 2 up and 1 up (PO, 15 Nov 2026) --------------------------
@@ -619,7 +630,8 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const bgObjQ = main.find((p) => fwd(p) >= bgObjFwd) ?? { x: u.x * bgObjFwd, y: u.y * bgObjFwd };
   const bgObjOnMap = Math.abs(bgObjQ.x) <= half && Math.abs(bgObjQ.y) <= half && distance(bgObjQ, objective.point) > 450;
   const bgObjective = { point: bgObjQ, name: bgObjName, onMap: bgObjOnMap };
-  const aCoy = clampBox({ x: start.x + v.x * onePlSide * 1300, y: start.y + v.y * onePlSide * 1300 });
+  const aCoyLat = onePlSide * spacing * 2.5;
+  const aCoy = clampBox({ x: start.x + v.x * aCoyLat, y: start.y + v.y * aCoyLat });
   const cCoy = clampBox(behind(1400, -onePlSide * 150));
   friendly.push(
     { label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company', kind: infKind },
@@ -628,11 +640,10 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
   const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
   const along2 = (l: number, f0: number, f1: number): Point[] => [f0, f1].map((f) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
-  const boundaryLat = onePlSide * 900;
   // The B/A boundary follows lines on the ground where it can (PO, 15 Nov
   // 2026): roads, tracks, streams, hedges, railways and wood edges, within
-  // 300 m of the straight line, so it stays between 1 Pl and A Coy.
-  const boundary = (() => {
+  // maxDev of the straight line, so it stays between the units either side.
+  const followGround = (boundaryLat: number, maxDev: number) => {
     const [a, b] = along2(boundaryLat, -1200, bgObjFwd + 300);
     if (!lay) return { path: [a, b], follows: '' };
     const W = cg.width, Hh = cg.height;
@@ -655,8 +666,8 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     for (let i = 0; i < N; i++) {
       const q = cellToPoint(cg, i % W, Math.floor(i / W));
       const dev = Math.abs(lat(q) - boundaryLat);
-      if (dev > 300) { cost[i] = Infinity; continue; }
-      cost[i] = (featureAt(i) ? 0.15 : 1) + (dev / 300) ** 2 * 0.5;
+      if (dev > maxDev) { cost[i] = Infinity; continue; }
+      cost[i] = (featureAt(i) ? 0.15 : 1) + (dev / maxDev) ** 2 * 0.5;
     }
     const s0 = cellOf(a), e0 = cellOf(b);
     if (s0 < 0 || e0 < 0) return { path: [a, b], follows: '' };
@@ -670,12 +681,22 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     const top = Object.entries(tally).sort((x, y) => y[1] - x[1])[0];
     const path = cells.filter((_, k) => k % 5 === 0 || k === cells.length - 1).map((i) => cellToPoint(cg, i % W, Math.floor(i / W)));
     return { path, follows: top && top[1] * cg.cellM >= 400 ? top[0] : '' };
-  })();
+  };
+  const maxDev = Math.min(300, spacing * 0.35);
+  // Boundaries (PO, 15 Nov 2026): B/A company boundary beyond 1 Pl; the 1 Pl / 2 Pl platoon
+  // boundary between you and 1 Pl; the battlegroup boundary on your open flank.
+  const boundary = followGround(onePlSide * spacing * 1.5, maxDev);
+  const plBoundary = followGround(onePlSide * spacing * 0.5, maxDev);
+  const bgBoundary = followGround(-onePlSide * spacing * 0.5, maxDev);
+  const lineLo = Math.min(-onePlSide * spacing * 0.5, aCoyLat + onePlSide * spacing) - 300;
+  const lineHi = Math.max(-onePlSide * spacing * 0.5, aCoyLat + onePlSide * spacing) + 300;
   const control: ScenarioMarkers['control'] = [
     // B Coy / A Coy boundary; sides are [left, right] looking forward: B on our side, A on theirs.
     { kind: 'boundary', path: boundary.path, label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },
-    { kind: 'phaseLine', path: across(150, -1600, 1600), label: 'SL' },
-    { kind: 'phaseLine', path: across(Math.min(900, Math.max(400, frontLine - 300)), -1600, 1600), label: plName },
+    { kind: 'boundary', path: plBoundary.path, label: '•••', sides: onePlSide > 0 ? ['2', '1'] : ['1', '2'] },
+    { kind: 'boundary', path: bgBoundary.path, label: 'II', sides: onePlSide > 0 ? [neighbour.short, bn.short] : [bn.short, neighbour.short] },
+    { kind: 'phaseLine', path: across(150, lineLo, lineHi), label: 'SL' },
+    { kind: 'phaseLine', path: across(Math.min(900, Math.max(400, frontLine - 300)), lineLo, lineHi), label: plName },
   ];
   const coyMission = {
     secure: `B Coy is to break through the enemy's forward line on the main route and secure ${objective.name}, in order to let ${bg} pass ${dir} to ${bgObjName}.`,
@@ -705,13 +726,13 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       element: '1 up: B Coy',
       detail:
         `Mission: ${coyMission} OC's intent: move fast and use the ground; do not fight the enemy where he expects us. ${coyScheme} ` +
-        `Start line ${ref(start)}; report crossing ${plName}.`,
+        `Start line ${ref(start)}; report crossing ${plName}. Each platoon has about ${km(spacing)} of frontage; your boundary with 1 Pl is marked on the map${plBoundary.follows ? `, mostly along the ${plBoundary.follows}` : ''}.`,
     },
     {
       element: 'Flanks',
       detail:
-        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about 1.3 km away beyond 1 Pl; the boundary is marked on the map${boundary.follows ? `, mostly along the ${boundary.follows}` : ''}. ` +
-        `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: open; ${neighbour.short} BG is about 5 km away, out of contact. ` +
+        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about ${km(Math.abs(aCoyLat))} away beyond 1 Pl; the B/A boundary is marked on the map${boundary.follows ? `, mostly along the ${boundary.follows}` : ''}. ` +
+        `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: the battlegroup boundary, about ${km(spacing / 2)} from you${bgBoundary.follows ? `, mostly along the ${bgBoundary.follows}` : ''}; beyond it ${neighbour.short} BG, whose nearest troops are about 5 km away, out of contact. ` +
         `Rear: C Coy (battlegroup reserve) at ${ref(cCoy)}.`,
     },
   ];

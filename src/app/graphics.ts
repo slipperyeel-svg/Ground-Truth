@@ -67,7 +67,7 @@ export function controlLine(c: LL, kind: 'boundary' | 'phaseLine', path: Point[]
   const d = unit(a, b);
   const out: Feature[] = [line(c, path, { kind, side: 'friend' })];
   if (kind === 'boundary') {
-    // APP-6 boundary: the echelon mark (one bar per "I": company I, battalion II)
+    // APP-6 boundary: the echelon mark (one bar per "I": company I, battalion II; dots for a platoon •••)
     // crosses the line at right angles halfway along it, with the units' names
     // either side of the line at the mark (PO, 15 Nov 2026).
     const lens = path.slice(1).map((q, k) => Math.hypot(q.x - path[k].x, q.y - path[k].y));
@@ -79,10 +79,21 @@ export function controlLine(c: LL, kind: 'boundary' | 'phaseLine', path: Point[]
     // The line's own direction at the mark, over about 100 m either side.
     const before = path[Math.max(0, k - 3)], after = path[Math.min(path.length - 1, k + 4)];
     const dm = unit(before, after), nm = perp(dm);
-    const bars = Math.max(1, (text.match(/I/g) ?? []).length);
-    for (let j = 0; j < bars; j++) {
-      const at = add(mid, dm, (j - (bars - 1) / 2) * 25);
-      out.push(line(c, [add(at, nm, -80), add(at, nm, 80)], { kind, side: 'friend' }));
+    const dots = (text.match(/•/g) ?? []).length;
+    if (dots) {
+      // Platoon (•••): dots in a row across the line, centred on it.
+      for (let j = 0; j < dots; j++) {
+        const at = add(mid, nm, (j - (dots - 1) / 2) * 34);
+        const ring: Point[] = [];
+        for (let k = 0; k < 12; k++) ring.push({ x: at.x + 11 * Math.cos((k * Math.PI) / 6), y: at.y + 11 * Math.sin((k * Math.PI) / 6) });
+        out.push(polygon(c, ring, { kind: 'dot', side: 'friend' }));
+      }
+    } else {
+      const bars = Math.max(1, (text.match(/I/g) ?? []).length);
+      for (let j = 0; j < bars; j++) {
+        const at = add(mid, dm, (j - (bars - 1) / 2) * 25);
+        out.push(line(c, [add(at, nm, -80), add(at, nm, 80)], { kind, side: 'friend' }));
+      }
     }
     // perp() points to the right of the line's direction (which runs forward); sides = [left, right].
     if (sides) {

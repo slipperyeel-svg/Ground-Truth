@@ -76,3 +76,17 @@ describe('time and light (PO, 15 Nov 2026)', () => {
     expect(at(16, 30)).toMatch(/Sunset was 16\d\d, last light 16\d\d: about \d+ minutes of light remain\./);
   });
 });
+
+describe('objectives and boundaries (PO, 15 Nov 2026)', () => {
+  it('names your objective as well as the battlegroup objective', () => {
+    const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, task: 'secure', info: 'partial', now, timeZone: 'Europe/London' });
+    expect(s.markers.task.code).toMatch(/^OBJ [A-Z]+$/);
+    expect(s.markers.task.code).not.toBe(s.markers.bgObjective.name);
+    expect(s.task_text).toContain(s.markers.task.code!);
+  });
+  it('draws a platoon boundary with 1 Pl, the B/A company boundary and the battlegroup boundary', () => {
+    const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now, timeZone: 'Europe/London' });
+    const b = s.markers.control.filter((c) => c.kind === 'boundary').map((c) => c.label).sort();
+    expect(b).toEqual(['I', 'II', '•••']);
+  });
+});
