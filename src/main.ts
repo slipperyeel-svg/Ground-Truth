@@ -33,6 +33,8 @@ import {
   type BoxGeo,
 } from './app/overlays';
 import { gridRef, inGreatBritain, toBNG, toUTM } from './geo/gridref';
+import { ensureSymbol, type Echelon } from './app/symbols';
+import { axisArrow, minefield, taskGraphic } from './app/graphics';
 import { addOsOpenMap, BASE_MAPS, baseMapSources, GLYPHS_URL, LABEL_FONT, OS_KEY, OS_OPEN_PREFIX, registerOsProtocol, SPRITE_URL, type BaseMapId } from './app/basemaps';
 import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
@@ -152,6 +154,8 @@ map.on('load', () => {
   map.addSource('company-zones', { type: 'image', url: BLANK, coordinates: PLACEHOLDER });
   map.addSource('company', { type: 'geojson', data: EMPTY });
   map.addSource('scenario', { type: 'geojson', data: EMPTY });
+  map.addSource('graphics', { type: 'geojson', data: EMPTY });
+  map.addSource('units', { type: 'geojson', data: EMPTY });
   map.addSource('section', { type: 'geojson', data: EMPTY });
   map.addSource('contours', {
     type: 'geojson',
@@ -294,6 +298,37 @@ map.on('load', () => {
     layout: { 'text-field': ['get', 'label'], 'text-font': [LABEL_FONT], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
     paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
   });
+  // Tactical graphics (APP-6 control measures): friendly in blue, enemy in red.
+  map.addLayer({
+    id: 'graphics-fill', type: 'fill', source: 'graphics', filter: ['==', ['get', 'kind'], 'minefield'],
+    paint: { 'fill-color': '#c00', 'fill-opacity': 0.12 },
+  });
+  map.addLayer({
+    id: 'graphics-lines', type: 'line', source: 'graphics', filter: ['!=', ['get', 'kind'], 'label'],
+    paint: {
+      'line-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'],
+      'line-width': ['match', ['get', 'kind'], 'axis', 2, 2.5],
+    },
+  });
+  map.addLayer({
+    id: 'graphics-labels', type: 'symbol', source: 'graphics', filter: ['==', ['get', 'kind'], 'label'],
+    layout: {
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-size': ['case', ['==', ['get', 'big'], true], 20, 12],
+      'text-allow-overlap': true,
+    },
+    paint: { 'text-color': ['match', ['get', 'side'], 'hostile', '#c00', '#0a3fa8'], 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
+  // APP-6 unit symbols.
+  map.addLayer({
+    id: 'units', type: 'symbol', source: 'units',
+    layout: {
+      'icon-image': ['get', 'icon'], 'icon-anchor': 'top-left', 'icon-offset': ['get', 'off'],
+      'icon-allow-overlap': true, 'icon-ignore-placement': true,
+      'text-field': ['get', 'text'], 'text-font': [LABEL_FONT], 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top',
+      'text-optional': true,
+    },
+    paint: { 'text-color': '#1d2118', 'text-halo-color': '#fff', 'text-halo-width': 2 },
+  });
   map.addLayer({
     id: 'me',
     type: 'circle',
@@ -306,6 +341,8 @@ map.on('load', () => {
     source: 'tap',
     paint: { 'circle-radius': 7, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 2 },
   });
+  // Unit symbols sit on top, so the selected point does not hide "You".
+  map.moveLayer('units');
 
   // The free OS open map goes beneath all our own layers.
   void addOsOpenMap(map, 'hillshade')
@@ -473,6 +510,10 @@ let scenario: ScenarioView | null = null;
 
 function clearScenario() {
   scenario = null;
+  phase2Shown = false;
+  dsShown = false;
+  (map.getSource('units') as GeoJSONSource | undefined)?.setData(EMPTY);
+  (map.getSource('graphics') as GeoJSONSource | undefined)?.setData(EMPTY);
   $('sc').hidden = true;
   $('sc-phase2').hidden = true;
   $('sc-ds').hidden = true;
@@ -480,6 +521,69 @@ function clearScenario() {
   if (box) (map.getSource('company-zones') as ImageSource | undefined)?.updateImage({ url: BLANK, coordinates: boxCorners(box) });
   (map.getSource('company') as GeoJSONSource | undefined)?.setData(EMPTY);
   (map.getSource('scenario') as GeoJSONSource | undefined)?.setData(EMPTY);
+}
+
+// ---------- the situation map: APP-6 symbols and tactical graphics ----------
+let phase2Shown = false;
+let dsShown = false;
+
+type P = { x: number; y: number };
+function unitFeature(p: P, spec: Parameters<typeof ensureSymbol>[1], text: { designation?: string; higher?: string } = {}, label = '') {
+  const c = box!.centre;
+  const ll = localToLatLon(c, p.x, p.y);
+  const { name, offset } = ensureSymbol(map, spec, text);
+  return { type: 'Feature' as const, properties: { icon: name, off: offset, text: label }, geometry: { type: 'Point' as const, coordinates: [ll.lon, ll.lat] } };
+}
+
+/**
+ * Draw the situation. Friendly units, axes and the task graphic are always
+ * shown. Enemy: before the DS reveal, only what the scenario says has been
+ * seen, as suspected (dashed frames), adding what "the situation develops"
+ * reveals once opened; with the DS reveal, the whole enemy layout in red.
+ */
+function renderSituation() {
+  const s = scenario?.scenario;
+  if (!box || !s) {
+    (map.getSource('units') as GeoJSONSource | undefined)?.setData(EMPTY);
+    (map.getSource('graphics') as GeoJSONSource | undefined)?.setData(EMPTY);
+    return;
+  }
+  const c = box.centre;
+  const m = s.markers;
+  const units: object[] = [];
+  const graphics: object[] = [];
+  for (const f of m.friendly) {
+    units.push(unitFeature(f.point, { identity: 'friend', echelon: f.echelon as Echelon, hq: f.hq }, { designation: f.designation, higher: f.higher }, f.own ? 'You' : ''));
+  }
+  for (const a of m.axes) graphics.push(...axisArrow(c, a.path[0], a.path[a.path.length - 1], 'friend', a.label));
+  graphics.push(...taskGraphic(c, m.task));
+
+  if (dsShown && scenario?.company?.platoons) {
+    const co = scenario.company;
+    for (const pl of co.platoons!) {
+      // Each platoon is shown by its dashed outline and label; its sections and teams carry the symbols.
+      for (const x of pl.positions) {
+        const echelon: Echelon = x.kind === 'section' ? 'section' : 'team';
+        units.push(unitFeature(x.point, { identity: 'hostile', echelon }, {}, x.kind === 'outpost' ? 'OP' : ''));
+      }
+    }
+    if (co.hq) units.push(unitFeature(co.hq.point, { identity: 'hostile', echelon: 'company', hq: true }));
+    for (const d of co.dummies ?? []) units.push(unitFeature(d.point, { identity: 'hostile', echelon: 'section', dummy: true }));
+    // DS: the minefield itself, once (the "found" outline is part of it).
+    const laid = m.minefields.filter((mf) => mf.label !== 'Mines found');
+    for (const mf of laid.length ? laid : m.minefields) graphics.push(...minefield(c, mf.outline, 'mines', 'hostile', false));
+  } else {
+    for (const x of m.sightings) {
+      if (x.phase === 2 && !phase2Shown) continue;
+      units.push(unitFeature(x.point, { identity: 'hostile', echelon: x.echelon as Echelon, suspected: !x.dummy, dummy: x.dummy }, {}, x.label));
+    }
+    for (const mf of m.minefields) {
+      if (mf.phase === 2 && !phase2Shown) continue;
+      graphics.push(...minefield(c, mf.outline, mf.phase === 1 ? 'suspected' : 'found', 'hostile', mf.phase === 1));
+    }
+  }
+  (map.getSource('units') as GeoJSONSource).setData({ type: 'FeatureCollection', features: units } as never);
+  (map.getSource('graphics') as GeoJSONSource).setData({ type: 'FeatureCollection', features: graphics } as never);
 }
 
 function el(tag: string, text: string, cls?: string) {
@@ -531,10 +635,15 @@ function showScenarioDS(show: boolean) {
     url: show ? companyZonesImage(c.maskWidth!, c.maskHeight!, c.killZone!, c.deadGround!, c.mines ?? null) : BLANK,
     coordinates: boxCorners(box),
   });
+  // Platoon areas and the gap outline only: the units themselves are APP-6 symbols.
   (map.getSource('company') as GeoJSONSource).setData(
-    show ? (companyGeoJSON(box.centre, { platoons: c.platoons!, hq: c.hq, dummies: c.dummies, gaps: c.gaps, routes: [] }) as never) : EMPTY,
+    show
+      ? (companyGeoJSON(box.centre, { platoons: c.platoons!.map((p) => ({ ...p, positions: [] })), hq: null, dummies: [], gaps: c.gaps, routes: [] }) as never)
+      : EMPTY,
   );
   (map.getSource('scenario') as GeoJSONSource).setData(show ? (scenarioGeoJSON(box.centre, v.scenario) as never) : EMPTY);
+  dsShown = show;
+  renderSituation();
 }
 
 async function runScenario(seed: number) {
@@ -554,6 +663,7 @@ async function runScenario(seed: number) {
     }
     $('sc-note').textContent = scenario.featureNote;
     showScenario();
+    renderSituation();
     status(`Problem set (${(scenario.timeMs / 1000).toFixed(1)} s)`);
     $('scenario-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -566,6 +676,8 @@ async function runScenario(seed: number) {
 $('btn-sc-new').addEventListener('click', () => void runScenario(Math.floor(Math.random() * 1e9)));
 $('btn-sc-develop').addEventListener('click', () => {
   $('sc-phase2').hidden = false;
+  phase2Shown = true;
+  renderSituation();
   $('sc-phase2').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('btn-sc-ds').addEventListener('click', () => showScenarioDS($('sc-ds').hidden === true));

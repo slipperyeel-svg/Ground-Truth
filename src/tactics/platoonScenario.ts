@@ -14,7 +14,8 @@ import { bearingVector, cellToPoint, distance, pointToCell, type Grid, type Poin
 import { localToLatLon } from '../terrain/elevation';
 import { viewshed, type Obstacles } from '../terrain/viewshed';
 import { slope as slopeOf } from '../terrain/slope';
-import { gridRef } from '../geo/gridref';
+import { fromBNG, fromUTM, gridRef, inGreatBritain, toBNG, toUTM } from '../geo/gridref';
+import { latLonToLocal } from '../terrain/elevation';
 import { COVER, type FeatureLayers } from '../features/layers';
 import { costDistance, slopeOnlyGoing } from './approach';
 import { analysisGrids } from './sectionDefence';
@@ -61,6 +62,20 @@ export interface RouteFacts {
   minesCrossed: number;
 }
 
+/** Map markers for the situation (APP-6 symbols and tactical graphics are drawn from these). */
+export interface ScenarioMarkers {
+  /** Friendly units, always shown. */
+  friendly: { label: string; designation: string; higher: string; point: Point; echelon: 'platoon' | 'company'; hq?: boolean; own?: boolean }[];
+  /** Effects arrows (axes of advance), always shown. */
+  axes: { label: string; path: Point[]; own: boolean }[];
+  /** The task graphic on the objective. */
+  task: { kind: TaskType; objective: Point; from: Point; across: Point; label: string };
+  /** Enemy the scenario says has been seen: shown as suspected, in phase 1 or once the situation develops. */
+  sightings: { phase: 1 | 2; point: Point; echelon: 'team' | 'section' | 'platoon'; label: string; dummy?: boolean }[];
+  /** A suspected minefield outline, if reported (phase 1) or found (phase 2). */
+  minefields: { phase: 1 | 2; outline: Point[]; label: string }[];
+}
+
 export interface PlatoonScenario {
   task: TaskType;
   info: InfoLevel;
@@ -90,6 +105,7 @@ export interface PlatoonScenario {
   ds: string[];
   /** The objective or focus point and computed routes, for the DS map. */
   objective: Point;
+  markers: ScenarioMarkers;
   direct: RouteFacts | null;
   covered: RouteFacts | null;
   /** Why it passed the quality gate, or why it is weak. */
@@ -153,6 +169,35 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     const six = ref(p).split(' ');
     return six.length === 3 ? `${six[0]} ${six[1].slice(0, 2)} ${six[2].slice(0, 2)}` : six.join(' ');
   };
+  /** Centre of the 1 km grid square containing p (what a report "in grid square X" can locate). */
+  const squareCentre = (p: Point): Point => {
+    const c = g.meta.centre;
+    if (!c) return p;
+    const ll = localToLatLon(c, p.x, p.y);
+    let back: { lat: number; lon: number };
+    if (inGreatBritain(ll.lat, ll.lon)) {
+      const b = toBNG(ll.lat, ll.lon);
+      back = fromBNG(Math.floor(b.easting / 1000) * 1000 + 500, Math.floor(b.northing / 1000) * 1000 + 500);
+    } else {
+      const t = toUTM(ll.lat, ll.lon);
+      back = fromUTM({ ...t, easting: Math.floor(t.easting / 1000) * 1000 + 500, northing: Math.floor(t.northing / 1000) * 1000 + 500 });
+    }
+    return latLonToLocal(c, back.lat, back.lon);
+  };
+  const sightings: ScenarioMarkers['sightings'] = [];
+  function mineOutline(): Point[] {
+    let fMin = Infinity, fMax = -Infinity, lMin = Infinity, lMax = -Infinity;
+    if (L.mines)
+      for (let i = 0; i < L.mines.length; i++) {
+        if (!L.mines[i]) continue;
+        const q = cellToPoint(cg, i % cg.width, Math.floor(i / cg.width));
+        const f = q.x * u.x + q.y * u.y, l = q.x * v.x + q.y * v.y;
+        fMin = Math.min(fMin, f); fMax = Math.max(fMax, f); lMin = Math.min(lMin, l); lMax = Math.max(lMax, l);
+      }
+    if (!Number.isFinite(fMin)) return [];
+    return [[lMin, fMin], [lMax, fMin], [lMax, fMax], [lMin, fMax]].map(([l, f]) => ({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
+  }
+  const minefields: ScenarioMarkers['minefields'] = [];
   const N = cg.width * cg.height;
   const cellOf = (p: Point) => {
     const c = pointToCell(cg, p);
@@ -316,14 +361,25 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const firstPos = (pl: typeof blocking) => pl.positions.find((x) => x.kind !== 'outpost') ?? pl.positions[0];
   const imagery = `Battlegroup drone imagery, ${hhmm(new Date(nowT.getTime() - 90 * 60_000), tz)} today`;
   if (info === 'rich') {
+    const ech = L.options.dispersed ? 'team' : 'section';
     for (const pl of fwdPl) {
       const ps = pl.positions.filter((x) => x.kind !== 'outpost').slice(0, 2);
       enemy.push({ text: `Fresh trenches and firing positions at ${ps.map((x) => ref(x.point)).join(' and ')}.`, source: imagery, reliability: 'good' });
+      for (const x of ps) sightings.push({ phase: 1, point: x.point, echelon: ech, label: '' });
     }
     // Dummies show up in imagery exactly like real positions.
-    for (const d of L.dummies.slice(0, 2)) enemy.push({ text: `Further trenches at ${ref(d.point)}.`, source: imagery, reliability: 'good' });
-    if (depthPl) enemy.push({ text: `Probable further positions in grid square ${square(depthPl.centre)}; vehicle tracks lead into it.`, source: imagery, reliability: 'fair' });
-    if (L.mines) enemy.push({ text: `Disturbed ground across the track ahead, possibly mines.`, source: imagery, reliability: 'fair' });
+    for (const d of L.dummies.slice(0, 2)) {
+      enemy.push({ text: `Further trenches at ${ref(d.point)}.`, source: imagery, reliability: 'good' });
+      sightings.push({ phase: 1, point: d.point, echelon: ech, label: '' });
+    }
+    if (depthPl) {
+      enemy.push({ text: `Probable further positions in grid square ${square(depthPl.centre)}; vehicle tracks lead into it.`, source: imagery, reliability: 'fair' });
+      sightings.push({ phase: 1, point: squareCentre(depthPl.centre), echelon: 'platoon', label: '?' });
+    }
+    if (L.mines) {
+      enemy.push({ text: `Disturbed ground across the track ahead, possibly mines.`, source: imagery, reliability: 'fair' });
+      minefields.push({ phase: 1, outline: mineOutline(), label: 'Suspected minefield' });
+    }
     if (L.options.isrFires) enemy.push({ text: 'Enemy drones have been seen over the area since first light; artillery has fallen within minutes of our vehicles being seen.', source: 'Battlegroup HQ', reliability: 'good' });
   } else if (info === 'partial') {
     enemy.push({
@@ -331,6 +387,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       source: 'B Company patrol, 0200 today',
       reliability: 'fair',
     });
+    sightings.push({ phase: 1, point: squareCentre(firstPos(blocking).point), echelon: 'section', label: 'MG' });
     if (L.mines) enemy.push({ text: 'The enemy laid mines along the track last week.', source: 'A local farmer', reliability: 'doubtful' });
   } else {
     enemy.push({
@@ -427,25 +484,68 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       messages.push({ time: at(-2), from: 'Company HQ', text: `Six rounds of enemy artillery landed at ${ref(hit)}, on the route. No casualties.` });
     });
   }
-  if (mineOnRoute) events.push(() => messages.push({ time: at(0), from: 'Your lead section', text: `Anti-personnel mines found on the track at ${ref(mineOnRoute)}. One man slightly injured.` }));
+  if (mineOnRoute) {
+    events.push(() => {
+      messages.push({ time: at(0), from: 'Your lead section', text: `Anti-personnel mines found on the track at ${ref(mineOnRoute)}. One man slightly injured.` });
+      const r = 60;
+      minefields.push({
+        phase: 2,
+        outline: [0, 1, 2, 3].map((k) => ({ x: mineOnRoute.x + r * Math.cos((k * Math.PI) / 2 + Math.PI / 4), y: mineOnRoute.y + r * Math.sin((k * Math.PI) / 2 + Math.PI / 4) })),
+        label: 'Mines found',
+      });
+    });
+  }
   if (L.dummies.length && info === 'rich') {
     events.push(() => {
       const d = L.dummies[0];
       const realNear = real.filter((x) => x.kind !== 'hq').sort((a, b) => distance(a.point, d.point) - distance(b.point, d.point))[0];
       messages.push({ time: at(0), from: '1 Platoon', text: `The trenches at ${ref(d.point)} are empty: a dummy. We are being fired on from about ${ref(realNear.point)}.` });
+      sightings.push({ phase: 2, point: d.point, echelon: L.options.dispersed ? 'team' : 'section', label: '', dummy: true });
+      sightings.push({ phase: 2, point: realNear.point, echelon: L.options.dispersed ? 'team' : 'section', label: '' });
     });
   }
   if (outposts.length) {
-    events.push(() => messages.push({ time: at(0), from: 'Your lead section', text: `Under machine-gun fire from about ${ref(outposts[0].point)}. Two or three men seen. We are in cover.` }));
+    events.push(() => {
+      messages.push({ time: at(0), from: 'Your lead section', text: `Under machine-gun fire from about ${ref(outposts[0].point)}. Two or three men seen. We are in cover.` });
+      sightings.push({ phase: 2, point: outposts[0].point, echelon: 'team', label: 'MG' });
+    });
   }
   events.push(() => {
     const p = firstPos(other).point;
     messages.push({ time: at(5), from: '1 Platoon', text: `Pinned down by fire from about ${ref(p)}. Unable to move forward.` });
+    sightings.push({ phase: 2, point: p, echelon: L.options.dispersed ? 'team' : 'section', label: '' });
   });
   // One or two events, in a random order.
   const nEv = Math.min(events.length, 1 + (random() < 0.5 ? 1 : 0));
   events.sort(() => random() - 0.5).slice(0, nEv).forEach((e) => e());
   messages.sort((a, b) => a.time.localeCompare(b.time));
+  // Friendly units and effects arrows (always shown).
+  const onePlSide = leftRight(other.centre) === 'left' ? 1 : -1; // 1 Pl is on the side away from the other enemy platoon
+  const onePl = { x: start.x + v.x * onePlSide * 500, y: start.y + v.y * onePlSide * 500 };
+  const behind = (d: number, l = 0) => ({ x: start.x - u.x * d + v.x * l, y: start.y - u.y * d + v.y * l });
+  const friendly: ScenarioMarkers['friendly'] = [
+    { label: '2 Pl (you)', designation: '2', higher: 'B', point: start, echelon: 'platoon', own: true },
+    { label: '1 Pl', designation: '1', higher: 'B', point: onePl, echelon: 'platoon' },
+    { label: '3 Pl', designation: '3', higher: 'B', point: behind(400, -onePlSide * 200), echelon: 'platoon' },
+    { label: 'B Coy HQ', designation: 'B', higher: '', point: behind(550, onePlSide * 250), echelon: 'company', hq: true },
+  ];
+  const axisEnd = (from: Point, to: Point, short: number) => {
+    const d = distance(from, to) || 1;
+    short = Math.min(short, d * 0.5); // never let the arrow turn back on itself on close objectives
+    return { x: to.x - ((to.x - from.x) / d) * short, y: to.y - ((to.y - from.y) / d) * short };
+  };
+  const axes: ScenarioMarkers['axes'] = [
+    { label: '2 Pl', path: [start, axisEnd(start, objective.point, task === 'secure' ? 180 : task === 'findFix' ? 550 : 250)], own: true },
+    { label: '1 Pl', path: [onePl, { x: onePl.x + u.x * Math.max(400, frontLine - 300), y: onePl.y + u.y * Math.max(400, frontLine - 300) }], own: false },
+  ];
+  const taskMarker: ScenarioMarkers['task'] = {
+    kind: task,
+    objective: objective.point,
+    from: axes[0].path[1],
+    across: v,
+    label: { secure: 'S', neutralise: 'N', findFix: 'F', screen: 'S' }[task],
+  };
+
   const phase2 = {
     time: `${hhmm(t2, tz)}. Your platoon has moved off as you planned.`,
     messages,
@@ -490,6 +590,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     timeAllowed: '30 minutes for your plan; 10 minutes when the situation develops.',
     phase2, ds,
     objective: objective.point,
+    markers: { friendly, axes, task: taskMarker, sightings, minefields },
     direct: chosen.direct, covered: chosen.covered,
     gate: `${chosen.ok ? 'Passed' : 'Weak'}: ${chosen.why}`,
     dataNote,

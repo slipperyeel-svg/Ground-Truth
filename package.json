@@ -21,6 +21,7 @@
   "type": "module",
   "dependencies": {
     "maplibre-gl": "^6.18.0",
+    "milsymbol": "^2.2.0",
     "proj4": "^2.23.0"
   }
 }
