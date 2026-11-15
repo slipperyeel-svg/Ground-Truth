@@ -86,12 +86,14 @@ export type BgType = 'light' | 'mechanised';
 
 /**
  * Units (PO, 15 Nov 2026). The user's own units are fictional: 1st Battalion,
- * The Sandhurst Rifles, and The Camberley Yeomanry (for armoured or recce
- * problems later). Every other unit (flanking battlegroups, tanks, recce) is a
+ * The Sandhurst Rifles; The Camberley Yeomanry (for armoured or recce problems
+ * later); and The Barossa Regiment, Royal Artillery (BAR RA), the battlegroup's
+ * fire support and the user's unit for artillery problems. Every other unit (flanking battlegroups, tanks, recce) is a
  * real British Army regiment, from the PO's lists.
  */
 export const OWN_BATTALION = { short: '1 SR', full: '1st Battalion, The Sandhurst Rifles' };
 export const OWN_CAVALRY = { short: 'CY', full: 'The Camberley Yeomanry' };
+export const OWN_ARTILLERY = { short: 'BAR RA', full: 'The Barossa Regiment, Royal Artillery' };
 /** Real infantry regiments: name and abbreviation (RRF units write FUSILIERS). */
 export const INFANTRY: { name: string; abbr: string }[] = [
   { name: 'Grenadier Guards', abbr: 'GREN GDS' },
@@ -434,13 +436,13 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     ? [
         { element: '3 sections', detail: '8 men each: two fire teams, one general-purpose machine gun' },
         { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
-        { element: 'Fire support', detail: 'battlegroup mortars on call through your company commander' },
+        { element: 'Fire support', detail: `battlegroup mortars, and a battery of ${OWN_ARTILLERY.full} (${OWN_ARTILLERY.short}) in support of the battlegroup, on call through your company commander` },
       ]
     : [
         { element: '3 sections', detail: '8 men each, carried in a Boxer: two fire teams, one general-purpose machine gun' },
         { element: 'Vehicles', detail: '4 Boxer (one per section, one for platoon HQ), each with a remote weapon station (heavy or grenade machine gun). They can give fire support wherever they can see the enemy and survive.' },
         { element: 'Platoon HQ', detail: 'platoon commander, platoon sergeant, signaller, a small reconnaissance drone (about 30 minutes in the air)' },
-        { element: 'Fire support', detail: 'battlegroup mortars on call through your company commander' },
+        { element: 'Fire support', detail: `battlegroup mortars, and a battery of ${OWN_ARTILLERY.full} (${OWN_ARTILLERY.short}) in support of the battlegroup, on call through your company commander` },
       ];
   const along = (() => {
     if (!lay) return '';
