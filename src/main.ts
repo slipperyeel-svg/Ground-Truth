@@ -738,7 +738,7 @@ function showScenario() {
     li.append(el('span', `(${e.source}; reliability ${e.reliability})`, 'rel'));
     return li;
   }));
-  $('sc-gaps').textContent = `Not known: ${s.enemyGaps}`;
+  $('sc-gaps').textContent = `Not known: ${s.enemyGaps}`; // a phrase completing "Not known:"
   $('sc-time').textContent = s.time;
   fillList('sc-ground', s.ground);
   $('sc-own').textContent = s.ownTroops;

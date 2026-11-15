@@ -71,7 +71,7 @@ describe('time and light (PO, 15 Nov 2026)', () => {
   it('describes the light for the time of day', () => {
     // Mid-November on Salisbury Plain: first light about 0650, sunrise about 0725, sunset about 1615.
     expect(at(6, 21)).toMatch(/It is dark\. First light 06\d\d, sunrise 07\d\d\./);
-    expect(at(10, 7)).toMatch(/Sunset 16\d\d, last light 16\d\d: about \d+(\.\d)? hours of light remain\./);
+    expect(at(10, 7)).toMatch(/Sunset 16\d\d, last light 16\d\d: about \d+ hours?( \d+ minutes)? of light remains?\./);
     expect(at(20, 0)).toMatch(/It is dark: last light was 16\d\d\. First light tomorrow 06\d\d/);
     expect(at(16, 30)).toMatch(/Sunset was 16\d\d, last light 16\d\d: about \d+ minutes of light remain\./);
   });
