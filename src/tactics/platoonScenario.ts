@@ -66,8 +66,8 @@ export interface RouteFacts {
 export interface ScenarioMarkers {
   /** Friendly units, always shown. */
   friendly: { label: string; designation: string; higher: string; point: Point; echelon: 'platoon' | 'company'; hq?: boolean; own?: boolean;
-    /** APP-6 unit type: infantry, or motorised infantry for a Boxer-mounted battlegroup. */
-    kind: 'infantry' | 'motorisedInfantry' }[];
+    /** APP-6 unit type: infantry, or mechanised infantry (armour oval) for a Boxer-mounted battlegroup. */
+    kind: 'infantry' | 'mechanisedInfantry' }[];
   /** Friendly control measures (2 up): company boundary, start line, phase line. */
   control: { kind: 'boundary' | 'phaseLine'; path: Point[]; label: string; /** Boundary: units on its [left, right], looking forward. */ sides?: [string, string] }[];
   /** The battlegroup objective. */
@@ -89,7 +89,7 @@ export type BgType = 'light' | 'mechanised';
  * read naturally without implying any real unit.
  */
 export const BATTALIONS = [
-  { short: '1 WESSEX', full: '1st Battalion, The Wessex Regiment' },
+  { short: '1 SR', full: '1st Battalion, The Sandhurst Rifles' },
   { short: '2 PENNINE', full: '2nd Battalion, The Pennine Rifles' },
   { short: '1 MARCHES', full: '1st Battalion, The Marches Regiment' },
   { short: '3 FENLAND', full: '3rd Battalion, The Fenland Light Infantry' },
@@ -359,7 +359,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
   const plName = `PL ${pick2(PL_NAMES)}`;
   const bg = `${bn.short} BG`;
-  const infKind = bgType === 'mechanised' ? 'motorisedInfantry' as const : 'infantry' as const;
+  const infKind = bgType === 'mechanised' ? 'mechanisedInfantry' as const : 'infantry' as const;
   const you = `You command 2 Platoon, B Company, ${bn.full}${bgType === 'mechanised' ? ' (mechanised, in Boxer)' : ''}. Your company commander is with Company HQ.`;
   const force = bgType === 'light'
     ? [

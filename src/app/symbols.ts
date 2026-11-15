@@ -24,14 +24,16 @@ const ECHELON: Record<Echelon, string> = { team: '11', section: '13', platoon: '
 
 /**
  * Unit types and their APP-6 D land-unit entity codes (checked against milsymbol):
- * infantry 121100 (a cross); motorised infantry 121104 (cross with a vertical
- * line: used for Boxer, PO 15 Nov 2026); armour 120500 (the tank oval);
+ * infantry 121100 (a cross); mechanised infantry 121102 (cross with the armour
+ * oval: used for Boxer, PO 15 Nov 2026); motorised infantry 121104 (cross with a
+ * vertical line; not used for Boxer, PO); armour 120500 (the tank oval);
  * reconnaissance 121300 (one diagonal); motorised recce 121303 (diagonal and
  * vertical line); armoured recce 120501 (oval with a diagonal).
  */
-export type UnitKind = 'infantry' | 'motorisedInfantry' | 'armour' | 'recce' | 'motorisedRecce' | 'armouredRecce';
+export type UnitKind = 'infantry' | 'mechanisedInfantry' | 'motorisedInfantry' | 'armour' | 'recce' | 'motorisedRecce' | 'armouredRecce';
 export const UNIT_ENTITY: Record<UnitKind, string> = {
   infantry: '121100',
+  mechanisedInfantry: '121102',
   motorisedInfantry: '121104',
   armour: '120500',
   recce: '121300',

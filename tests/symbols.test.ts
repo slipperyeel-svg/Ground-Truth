@@ -19,7 +19,8 @@ describe('APP-6 symbol codes', () => {
   it('every code is 20 characters', () => {
     for (const echelon of ['team', 'section', 'platoon', 'company'] as const) expect(sidc({ identity: 'friend', echelon })).toHaveLength(20);
   });
-  it('codes motorised infantry (Boxer), armour and recce', () => {
+  it('codes mechanised infantry (Boxer), motorised infantry, armour and recce', () => {
+    expect(sidc({ identity: 'friend', echelon: 'platoon', kind: 'mechanisedInfantry' })).toBe('10031000141211020000');
     expect(sidc({ identity: 'friend', echelon: 'platoon', kind: 'motorisedInfantry' })).toBe('10031000141211040000');
     expect(sidc({ identity: 'friend', echelon: 'company', kind: 'armour' })).toBe('10031000151205000000');
     expect(sidc({ identity: 'hostile', echelon: 'platoon', kind: 'recce' })).toBe('10061000141213000000');
