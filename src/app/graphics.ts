@@ -65,43 +65,53 @@ export function objective(c: LL, p: Point, r = 150, name = 'OBJ'): Feature[] {
 export function controlLine(c: LL, kind: 'boundary' | 'phaseLine', path: Point[], text: string, sides?: [string, string]): Feature[] {
   const a = path[0], b = path[path.length - 1];
   const d = unit(a, b);
-  const out: Feature[] = [line(c, path, { kind, side: 'friend' })];
-  if (kind === 'boundary') {
-    // APP-6 boundary: the echelon mark (one bar per "I": company I, battalion II; dots for a platoon •••)
-    // crosses the line at right angles halfway along it, with the units' names
-    // either side of the line at the mark (PO, 15 Nov 2026).
-    const lens = path.slice(1).map((q, k) => Math.hypot(q.x - path[k].x, q.y - path[k].y));
-    const total = lens.reduce((s, x) => s + x, 0);
+  if (kind !== 'boundary') {
+    return [line(c, path, { kind, side: 'friend' }), label(c, add(a, d, 120), text, { side: 'friend' }), label(c, add(b, d, -120), text, { side: 'friend' })];
+  }
+  // APP-6 boundary (PO, 15 Nov 2026): the line is broken halfway along, and the
+  // echelon mark sits in the gap (one bar per "I": company I, battalion II; dots for
+  // a platoon •••), with the units' names either side of the line at the mark.
+  const lens = path.slice(1).map((q, k) => Math.hypot(q.x - path[k].x, q.y - path[k].y));
+  const total = lens.reduce((s, x) => s + x, 0);
+  /** The point at a distance along the path, and the index of the segment it is on. */
+  const at = (dist: number): { p: Point; k: number } => {
     let k = 0, run = 0;
-    while (k < lens.length - 1 && run + lens[k] < total / 2) run += lens[k++];
-    const t = lens[k] ? (total / 2 - run) / lens[k] : 0;
-    const mid = { x: path[k].x + (path[k + 1].x - path[k].x) * t, y: path[k].y + (path[k + 1].y - path[k].y) * t };
-    // The line's own direction at the mark, over about 100 m either side.
-    const before = path[Math.max(0, k - 3)], after = path[Math.min(path.length - 1, k + 4)];
-    const dm = unit(before, after), nm = perp(dm);
-    const dots = (text.match(/•/g) ?? []).length;
-    if (dots) {
-      // Platoon (•••): dots in a row across the line, centred on it.
-      for (let j = 0; j < dots; j++) {
-        const at = add(mid, nm, (j - (dots - 1) / 2) * 34);
-        const ring: Point[] = [];
-        for (let k = 0; k < 12; k++) ring.push({ x: at.x + 11 * Math.cos((k * Math.PI) / 6), y: at.y + 11 * Math.sin((k * Math.PI) / 6) });
-        out.push(polygon(c, ring, { kind: 'dot', side: 'friend' }));
-      }
-    } else {
-      const bars = Math.max(1, (text.match(/I/g) ?? []).length);
-      for (let j = 0; j < bars; j++) {
-        const at = add(mid, dm, (j - (bars - 1) / 2) * 25);
-        out.push(line(c, [add(at, nm, -80), add(at, nm, 80)], { kind, side: 'friend' }));
-      }
-    }
-    // perp() points to the right of the line's direction (which runs forward); sides = [left, right].
-    if (sides) {
-      out.push(label(c, add(mid, nm, -140), sides[0], { side: 'friend' }));
-      out.push(label(c, add(mid, nm, 140), sides[1], { side: 'friend' }));
+    while (k < lens.length - 1 && run + lens[k] < dist) run += lens[k++];
+    const t = lens[k] ? Math.max(0, Math.min(1, (dist - run) / lens[k])) : 0;
+    return { p: { x: path[k].x + (path[k + 1].x - path[k].x) * t, y: path[k].y + (path[k + 1].y - path[k].y) * t }, k };
+  };
+  const { p: mid, k } = at(total / 2);
+  // The line's own direction at the mark, over about 100 m either side.
+  const before = path[Math.max(0, k - 3)], after = path[Math.min(path.length - 1, k + 4)];
+  const dm = unit(before, after), nm = perp(dm);
+  const dots = (text.match(/•/g) ?? []).length;
+  const bars = dots ? 0 : Math.max(1, (text.match(/I/g) ?? []).length);
+  const half = dots ? 26 * dots : 30 + 14 * bars; // half the gap, metres
+  // The line in two parts, with the gap between.
+  const g0 = at(total / 2 - half), g1 = at(total / 2 + half);
+  const out: Feature[] = [
+    line(c, [...path.slice(0, g0.k + 1), g0.p], { kind, side: 'friend' }),
+    line(c, [g1.p, ...path.slice(g1.k + 1)], { kind, side: 'friend' }),
+  ];
+  if (dots) {
+    // Platoon (•••): dots in a row along the line, in the gap.
+    for (let j = 0; j < dots; j++) {
+      const q = add(mid, dm, (j - (dots - 1) / 2) * 34);
+      const ring: Point[] = [];
+      for (let r = 0; r < 12; r++) ring.push({ x: q.x + 11 * Math.cos((r * Math.PI) / 6), y: q.y + 11 * Math.sin((r * Math.PI) / 6) });
+      out.push(polygon(c, ring, { kind: 'dot', side: 'friend' }));
     }
   } else {
-    out.push(label(c, add(a, d, 120), text, { side: 'friend' }), label(c, add(b, d, -120), text, { side: 'friend' }));
+    // Company (I) or battalion (II): bars standing across the line, in the gap.
+    for (let j = 0; j < bars; j++) {
+      const q = add(mid, dm, (j - (bars - 1) / 2) * 25);
+      out.push(line(c, [add(q, nm, -60), add(q, nm, 60)], { kind, side: 'friend' }));
+    }
+  }
+  // perp() points to the right of the line's direction (which runs forward); sides = [left, right].
+  if (sides) {
+    out.push(label(c, add(mid, nm, -130), sides[0], { side: 'friend' }));
+    out.push(label(c, add(mid, nm, 130), sides[1], { side: 'friend' }));
   }
   return out;
 }
