@@ -19,7 +19,7 @@
  * Facts only, from the computed layout: nothing here decides what can be seen
  * except the line-of-sight calculation (core principle 1).
  */
-import { distance, type Grid, type Point } from '../terrain/grid';
+import { bearingVector, distance, type Grid, type Point } from '../terrain/grid';
 import { lineOfSight, type Obstacles } from '../terrain/viewshed';
 import type { CompanyLayout, EnemyPosition } from './companyDefence';
 import { POSTURES, SECTION_SCORING } from './sectionDefence';
@@ -220,13 +220,44 @@ export function developFromPlan(
     });
   }
 
+  // Counter-attack (PO, 19 Nov 2026): if the enemy holds a mounted reserve back, it
+  // counter-attacks when the first of your elements closes to within 150 m of the
+  // enemy's forward line.
+  const reserve = L.platoons.find((p) => p.role === 'reserve');
+  if (reserve) {
+    const adv = bearingVector(L.advanceBearingDeg);
+    const fwdOf = (p: Point) => p.x * adv.x + p.y * adv.y;
+    const front = Math.min(...L.platoons.filter((p) => p.role === 'forward').flatMap((p) => p.positions.filter((x) => x.kind !== 'outpost').map((x) => fwdOf(x.point))));
+    let first: { r: (typeof routes)[number]; s: Sample } | null = null;
+    for (const r of routes) {
+      const hit = r.samples.find((x) => fwdOf(x.p) >= front - 150);
+      if (hit && (!first || hit.m < first.s.m)) first = { r, s: hit };
+    }
+    if (first) {
+      const { r, s } = first;
+      events.push({
+        route: true, who: r.who, stop: 'in contact',
+        atM: s.m,
+        point: s.p,
+        apply: (t) => {
+          out.messages.push({
+            time: t,
+            from: 'Company HQ',
+            text: `Enemy counter-attack: about a platoon in three BMPs moving fast from about ${ref(reserve.centre)} towards ${r.who} at ${ref(s.p)}. Engage and report.`,
+          });
+          out.sightings.push({ point: reserve.centre, echelon: 'platoon', label: 'BMP' });
+        },
+      });
+    }
+  }
+
   // Drones and artillery come once, onto whichever element is seen first.
   const fires = events.filter((e) => e.kind === 'fires').sort((a, b) => a.atM - b.atM);
   for (const e of fires.slice(1)) events.splice(events.indexOf(e), 1);
 
   // Nothing happened on any route: the enemy reacts instead.
   if (!events.some((e) => e.route)) {
-    const depth = L.platoons.find((p) => p.role === 'depth');
+    const depth = L.platoons.find((p) => p.role === 'reserve') ?? L.platoons.find((p) => p.role === 'depth');
     const lead = routes.reduce((a, b) => (a.samples[a.samples.length - 1].m >= b.samples[b.samples.length - 1].m ? a : b));
     const endM = lead.samples[lead.samples.length - 1].m;
     const end = lead.points[lead.points.length - 1];

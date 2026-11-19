@@ -81,6 +81,18 @@
                     <option value="poor">Poor</option>
                   </select>
                 </label>
+                <label>Enemy layout
+                  <select id="sel-layout">
+                    <option value="" selected>Generator decides (from the ground)</option>
+                    <option value="twoUp">Two up, one back</option>
+                    <option value="oneUp">One up, two back</option>
+                    <option value="threeUp">Three up, in line</option>
+                    <option value="strongpoint">All-round strongpoint</option>
+                    <option value="screen">Forward screen and main position</option>
+                    <option value="counterattack">Two up, with a counter-attack force</option>
+                    <option value="echelon">Echeloned along the route</option>
+                  </select>
+                </label>
                 <label>Problem time
                   <select id="sel-time">
                     <option value="now" selected>Now</option>
@@ -314,6 +326,20 @@
       <div data-modes="dev">
       <div id="company-block" class="block" hidden>
         <div class="label">Enemy company (DS view)</div>
+        <div class="row selects">
+          <label>Layout
+            <select id="sel-co-layout">
+              <option value="" selected>Generator decides</option>
+              <option value="twoUp">Two up, one back</option>
+              <option value="oneUp">One up, two back</option>
+              <option value="threeUp">Three up, in line</option>
+              <option value="strongpoint">All-round strongpoint</option>
+              <option value="screen">Forward screen and main position</option>
+              <option value="counterattack">Two up, with a counter-attack force</option>
+              <option value="echelon">Echeloned along the route</option>
+            </select>
+          </label>
+        </div>
         <label class="check"><input type="checkbox" id="co-auto" checked /> Let the generator decide the optional elements</label>
         <div id="co-options" class="row toggles" hidden>
           <label><input type="checkbox" id="co-mines" /> Mines and obstacles</label>

@@ -299,6 +299,8 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   // ---- The enemy, as laid out --------------------------------------------
   const fwdPl = L.platoons.filter((p) => p.role === 'forward');
   const depthPl = L.platoons.find((p) => p.role === 'depth') ?? null;
+  /** A mounted counter-attack force held back (PO, 19 Nov 2026), if the enemy has one. */
+  const reservePl = L.platoons.find((p) => p.role === 'reserve') ?? null;
   const main = L.routes[0];
   const distToMain = (p: Point) => Math.min(...main.map((q) => distance(p, q)));
   const blocking = [...fwdPl].sort((a, b) => distToMain(a.centre) - distToMain(b.centre))[0];
@@ -524,6 +526,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       minefields.push({ phase: 1, outline: mineOutline(), label: 'Suspected minefield' });
     }
     if (L.options.isrFires) enemy.push({ text: 'Enemy drones have been seen over the area since first light; artillery has fallen within minutes of our vehicles being seen.', source: 'Battlegroup HQ', reliability: 'good' });
+    if (reservePl) enemy.push({ text: `Two or three armoured vehicles, probably BMPs, seen moving into cover near ${ref(squareCentre(reservePl.centre))}, behind the enemy position.`, source: imagery, reliability: 'fair' });
   } else if (info === 'partial') {
     enemy.push({
       text: `A patrol was fired on last night from the area of grid square ${square(firstPos(blocking).point)}: at least one machine gun. Strength unknown.`,
@@ -532,6 +535,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     });
     sightings.push({ phase: 1, point: squareCentre(firstPos(blocking).point), echelon: 'section', label: 'MG' });
     if (L.mines) enemy.push({ text: 'The enemy laid mines along the track last week.', source: 'A local farmer', reliability: 'doubtful' });
+    if (reservePl) enemy.push({ text: `Tracked vehicles were heard moving behind the enemy position during the night, in the area of grid square ${square(reservePl.centre)}.`, source: 'B Company patrol, 0200 today', reliability: 'fair' });
   } else {
     enemy.push({
       text: `The enemy is believed to be holding the ground about ${km(Math.round(frontLine / 100) * 100)} ahead, between grid squares ${square(fwdPl[0].centre)} and ${square(fwdPl[fwdPl.length - 1].centre)}.`,

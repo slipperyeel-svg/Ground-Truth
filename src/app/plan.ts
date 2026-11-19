@@ -49,6 +49,8 @@ export interface ProblemKey {
   kind?: 'normal' | 'quick' | 'daily';
   /** For the Problem of the day: its date and site. */
   label?: string;
+  /** The enemy layout the DS chose, if any ('' or absent: the ground decided). */
+  layout?: string;
 }
 
 export interface SavedPlan {

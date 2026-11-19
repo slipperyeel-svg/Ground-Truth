@@ -4,7 +4,7 @@
 import type { PlanFacts, PlanInput } from '../tactics/planFacts';
 import type { DevelopedSituation } from '../tactics/planEvents';
 import type { Posture } from '../tactics/sectionDefence';
-import type { CompanyOptions } from '../tactics/companyDefence';
+import type { CompanyOptions, LayoutType } from '../tactics/companyDefence';
 import type { InfoLevel, TaskType } from '../tactics/platoonScenario';
 import { BOX_M } from '../worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, FeaturesView, LoadedGround, ProblemView, SectionView, ViewshedResult, WorkerRequest, WorkerResponse } from '../worker/protocol';
@@ -69,8 +69,8 @@ export class Engine {
   }
 
   /** Generate an enemy company defence across the advance from the box centre (DS view). */
-  company(options: Partial<CompanyOptions>, seed: number | undefined, onProgress?: (m: string) => void): Promise<CompanyView> {
-    return this.request<CompanyView>({ type: 'company', options, seed }, onProgress);
+  company(options: Partial<CompanyOptions>, seed: number | undefined, onProgress?: (m: string) => void, layout?: LayoutType): Promise<CompanyView> {
+    return this.request<CompanyView>({ type: 'company', options, seed, layout }, onProgress);
   }
 
   /** Generate an enemy company and an infantry platoon scenario against it. */
@@ -83,7 +83,7 @@ export class Engine {
   }
 
   scenario(
-    req: { task?: TaskType; info?: InfoLevel; options: Partial<CompanyOptions>; seed: number; now?: number },
+    req: { task?: TaskType; info?: InfoLevel; options: Partial<CompanyOptions>; seed: number; now?: number; layout?: LayoutType },
     onProgress?: (m: string) => void,
   ): Promise<ScenarioView> {
     return this.request<ScenarioView>({ type: 'scenario', ...req }, onProgress);

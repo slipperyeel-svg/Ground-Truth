@@ -4,7 +4,7 @@ import type { DevelopedSituation } from '../tactics/planEvents';
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
-import type { CompanyOptions, PositionKind } from '../tactics/companyDefence';
+import type { LayoutType, PlatoonRole, CompanyOptions, PositionKind } from '../tactics/companyDefence';
 import type { InfoLevel, PlatoonScenario, TaskType } from '../tactics/platoonScenario';
 import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
@@ -67,6 +67,7 @@ export type WorkerRequest =
       /** Elements forced on or off; any left out are decided by the generator. */
       options: Partial<CompanyOptions>;
       seed?: number;
+      layout?: LayoutType;
     }
   | {
       /** Generate an enemy company and an infantry platoon scenario against it (Moltke guidelines). */
@@ -76,6 +77,8 @@ export type WorkerRequest =
       info?: InfoLevel;
       options: Partial<CompanyOptions>;
       seed: number;
+      /** Force the enemy's layout (the DS); otherwise the ground decides. */
+      layout?: LayoutType;
       /** The time the problem is set for (ms since 1970), so a resumed problem reads the same. */
       now?: number;
     }
@@ -175,7 +178,9 @@ export interface CompanyView {
   featureNote: string;
   advanceBearingDeg?: number;
   options?: CompanyOptions;
-  platoons?: { name: string; role: 'forward' | 'depth'; outline: Point[]; positions: { kind: PositionKind; label: string; point: Point; men: number }[] }[];
+  /** How the enemy company is laid out (e.g. one up, two back). */
+  layout?: LayoutType;
+  platoons?: { name: string; role: PlatoonRole; outline: Point[]; positions: { kind: PositionKind; label: string; point: Point; men: number }[] }[];
   hq?: { label: string; point: Point } | null;
   dummies?: { label: string; point: Point }[];
   gaps?: { centre: Point; widthM: number; coveredFromDepth: number; coveredByAny: number }[];

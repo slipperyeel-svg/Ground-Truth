@@ -103,6 +103,7 @@ function companyView(g: Grid, L: CompanyLayout, ms: number): CompanyView {
     featureNote,
     advanceBearingDeg: L.advanceBearingDeg,
     options: L.options,
+    layout: L.layout,
     platoons: L.platoons.map((p) => ({ name: p.name, role: p.role, outline: p.outline, positions: p.positions })),
     hq: L.hq,
     dummies: L.dummies,
@@ -305,7 +306,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });
       const t0 = performance.now();
       await ensureLayers(progress);
-      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, progress });
+      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, layout: req.layout, progress });
       if (!L) {
         post({ type: 'scenario', id: req.id, result: { found: false, log: ['No sensible enemy defence fits ahead of you in any direction.'], featureNote, timeMs: Math.round(performance.now() - t0) } });
         return;
@@ -354,7 +355,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });
       const t0 = performance.now();
       await ensureLayers(progress);
-      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, progress });
+      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, layout: req.layout, progress });
       const g = grid;
       const ref = (p: { x: number; y: number }) => {
         const c = g.meta.centre;

@@ -72,7 +72,7 @@ export const COMPANY = {
   forwardMaxM: 2500,
   fartherIfBetterBy: 1.0,
   /** Candidate positions are searched this far either side of the main route. */
-  lateralMaxM: 1100,
+  lateralMaxM: 1300,
   sampleM: 60,
   edgeMarginM: 150,
   platoonFrontM: 400,
@@ -104,6 +104,27 @@ export const COMPANY = {
 
 export type PositionKind = 'section' | 'team' | 'outpost' | 'hq' | 'dummy';
 
+/**
+ * How the enemy company lays itself out (PO, 19 Nov 2026: widen the options),
+ * chosen by the ground: the generator builds each layout that fits and picks
+ * among those that suit the ground best, with some variety.
+ */
+export type LayoutType = 'twoUp' | 'oneUp' | 'threeUp' | 'strongpoint' | 'screen' | 'counterattack' | 'echelon';
+export const LAYOUT_TYPES: LayoutType[] = ['twoUp', 'oneUp', 'threeUp', 'strongpoint', 'screen', 'counterattack', 'echelon'];
+export const LAYOUT_NAMES: Record<LayoutType, string> = {
+  twoUp: 'two up, one back',
+  oneUp: 'one up, two back',
+  threeUp: 'three up, in line',
+  strongpoint: 'all-round strongpoint',
+  screen: 'forward screen and main position',
+  counterattack: 'two up, with a counter-attack force',
+  echelon: 'echeloned along the route',
+};
+/** How often each layout is chosen when the ground suits several equally. PO to tune. */
+export const LAYOUT_PRIOR: Record<LayoutType, number> = {
+  twoUp: 1, oneUp: 1, threeUp: 0.7, strongpoint: 0.8, screen: 0.8, counterattack: 1, echelon: 0.7,
+};
+
 export interface EnemyPosition {
   kind: PositionKind;
   platoon: string; // '1 Pl', '2 Pl', '3 Pl', 'Coy HQ', '—'
@@ -113,9 +134,12 @@ export interface EnemyPosition {
   men: number;
 }
 
+export type PlatoonRole = 'forward' | 'depth' | 'screen' | 'reserve';
+
 export interface PlatoonArea {
   name: string;
-  role: 'forward' | 'depth';
+  /** forward and depth: fighting positions; screen: teams well forward; reserve: a counter-attack force, mounted. */
+  role: PlatoonRole;
   centre: Point;
   /** Corners of the platoon area (local metres), for the map. */
   outline: Point[];
@@ -135,6 +159,8 @@ export interface Gap {
 }
 
 export interface CompanyLayout {
+  /** How the company is laid out. */
+  layout: LayoutType;
   /** Edge nearest the attacker's side (approximate when the advance is not N/E/S/W). */
   attackerSide: Side;
   advanceBearingDeg: number;
@@ -175,6 +201,8 @@ export interface CompanyInput {
   sides?: Side[];
   /** Advance bearings to try, degrees. Default: four at right angles, randomly turned (16 points). */
   bearings?: number[];
+  /** Force a layout (DS or Developer page); otherwise the ground decides. */
+  layout?: LayoutType;
   progress?: (message: string) => void;
 }
 
@@ -473,7 +501,353 @@ function layoutForSide(input: CompanyInput, base: ReturnType<typeof analysisGrid
     if (picks.length && val > depthBest) [depthBest, depthCentre, depthPicks] = [val, c, picks];
   }
 
-  return { log: '', layout: { routes, ctx, pair, fwdPicks, depthCentre, depthPicks, frontLine, value: pairV + Math.max(0, depthBest), cands, n, spacing, lat, fwdDead, deadTotal, frames } };
+  return {
+    log: '',
+    layout: {
+      routes, ctx, pair, fwdPicks, depthCentre, depthPicks, frontLine, value: pairV + Math.max(0, depthBest), cands, n, spacing, lat, fwdDead, deadTotal, frames,
+      centres, areaValue: value, mainLat, inBox, depthRoom,
+    },
+  };
+}
+
+type SideLayout = NonNullable<ReturnType<typeof layoutForSide>['layout']>;
+
+/** A platoon-sized group in a layout: its role, centre and chosen positions (u: the way it faces, if not the advance). */
+interface Group {
+  role: PlatoonRole;
+  centre: Point;
+  picks: Cand[];
+  u?: Point;
+}
+interface Variant {
+  type: LayoutType;
+  groups: Group[];
+  /** How well the ground suits this layout: the average quality of its positions, plus what the layout needs. */
+  quality: number;
+  /** The feature an all-round strongpoint is built on (company HQ goes there). */
+  hub?: Point;
+}
+
+export const ROLE_NAMES: Record<PlatoonRole, string> = { forward: 'forward', depth: 'depth', screen: 'forward screen', reserve: 'counter-attack force' };
+
+const rotate = (d: Point, deg: number): Point => {
+  const r = (deg * Math.PI) / 180;
+  // Clockwise rotation (bearings run clockwise).
+  return { x: d.x * Math.cos(r) + d.y * Math.sin(r), y: -d.x * Math.sin(r) + d.y * Math.cos(r) };
+};
+
+/**
+ * Every layout that fits the ground in this direction (PO, 19 Nov 2026). Each is
+ * built from the same candidate positions, scored on the ground (fields of fire,
+ * cover, reverse slopes, mutual support), with what that layout needs:
+ *  - two up, one back: as before;
+ *  - one up, two back: one platoon forward on the best single area, two in depth
+ *    behind it, reverse slopes favoured (a narrow front or a single crest);
+ *  - three up: three platoons in line, no depth (good ground wide across the route);
+ *  - all-round strongpoint: three platoons around one feature, facing outwards
+ *    (a hill top, wood or village), HQ in the middle;
+ *  - forward screen and main position: small teams 500–900 m in front of a main
+ *    position of two platoons further back (a long, open approach);
+ *  - counter-attack force: two platoons forward, a platoon in BMPs hidden 500–1,500 m
+ *    behind with a way forward (covered ground behind the position);
+ *  - echeloned along the route: platoons staggered in depth astride the main
+ *    route, alternating sides (a channelled approach).
+ */
+function buildVariants(L: SideLayout, force?: LayoutType): Variant[] {
+  const C = COMPANY;
+  const { ctx, cands, n, spacing, lat, centres, areaValue, mainLat, inBox } = L;
+  const cg = ctx.cg;
+  const u = ctx.u;
+  const f = (p: Point) => fwd(ctx, p);
+  // Value of an area centred anywhere (cached for candidate centres).
+  const area = (centre: Point, uu: Point = u): { v: number; picks: Cand[] } => {
+    const picks = bestIn(cg, cands, centre, uu, n, spacing);
+    return { v: picks.reduce((a, b) => a + b.total, 0) * (picks.length >= Math.min(3, n) ? 1 : 0.5), picks };
+  };
+  const at = (c: Cand) => areaValue.get(c) ?? area(c.p);
+  /** Best positions in an area, leaving out positions already taken by another platoon. */
+  const areaExcl = (centre: Point, used: Cand[], uu: Point = u): Cand[] => bestIn(cg, cands.filter((c) => !used.includes(c)), centre, uu, n, spacing);
+  const overlaps = (a: Cand[], b: Cand[]) => a.some((x) => b.includes(x));
+  const quality = (groups: Group[], bonus = 0) => {
+    const ps = groups.flatMap((g) => g.picks);
+    return ps.length ? ps.reduce((a, b) => a + b.total, 0) / ps.length + bonus : -Infinity;
+  };
+  const out: Variant[] = [];
+  const want = (t: LayoutType) => !force || force === t;
+
+  // Two up, one back (the layout found while choosing the direction).
+  const twoUp: Group[] = [
+    { role: 'forward', centre: L.pair[0].p, picks: L.fwdPicks[0] },
+    { role: 'forward', centre: L.pair[1].p, picks: L.fwdPicks[1] },
+  ];
+  if (L.depthCentre && L.depthPicks.length) twoUp.push({ role: 'depth', centre: L.depthCentre.p, picks: L.depthPicks });
+  if (want('twoUp')) out.push({ type: 'twoUp', groups: twoUp, quality: quality(twoUp) });
+
+  // One up, two back.
+  if (want('oneUp')) {
+    const a = [...centres].filter((c) => f(c.p) <= C.forwardPreferredM).sort((x, y) => at(y).v - at(x).v)[0] ?? centres[0];
+    if (a) {
+      const pa = at(a).picks;
+      const behind = cands.filter((c) => {
+        const d = f(c.p) - f(a.p);
+        return d >= 300 && d <= 800 && Math.abs(lat(c.p) - lat(a.p)) <= 600 && inBox(c.p);
+      });
+      let best: [Cand, Cand] | null = null, bestV = -Infinity;
+      for (const x of behind)
+        for (const y of behind) {
+          if (lat(x.p) >= lat(y.p)) continue;
+          const sep = lat(y.p) - lat(x.p);
+          if (sep < 400 || sep > 800 || Math.abs((lat(x.p) + lat(y.p)) / 2 - lat(a.p)) > 250) continue;
+          const vx = at(x), vy = at(y);
+          if (overlaps(vx.picks, vy.picks) || overlaps(vx.picks, pa) || overlaps(vy.picks, pa)) continue;
+          const rev = [...vx.picks, ...vy.picks].filter((c) => c.reverse).length * 0.3;
+          if (vx.v + vy.v + rev > bestV) [bestV, best] = [vx.v + vy.v + rev, [x, y]];
+        }
+      if (best) {
+        const g: Group[] = [
+          { role: 'forward', centre: a.p, picks: pa },
+          { role: 'depth', centre: best[0].p, picks: at(best[0]).picks },
+          { role: 'depth', centre: best[1].p, picks: at(best[1]).picks },
+        ];
+        const rev = g.slice(1).flatMap((x) => x.picks).filter((c) => c.reverse).length / Math.max(1, g[1].picks.length + g[2].picks.length);
+        out.push({ type: 'oneUp', groups: g, quality: quality(g, 0.3 * rev) });
+      }
+    }
+  }
+
+  // Three up, in line: three platoon areas side by side, 400–700 m apart, at a similar depth.
+  if (want('threeUp')) {
+    let best: { g: Group[]; v: number } | null = null;
+    const near = centres.filter((c) => f(c.p) <= C.forwardPreferredM + 300);
+    for (const b of near) {
+      const vb = at(b);
+      const side = (sgn: number) => {
+        let bestS: { c: Cand; picks: Cand[]; v: number } | null = null;
+        for (const c of near) {
+          const sep = (lat(c.p) - lat(b.p)) * sgn;
+          if (sep < 400 || sep > 700 || Math.abs(f(c.p) - f(b.p)) > C.forwardStaggerM) continue;
+          const picks = areaExcl(c.p, vb.picks);
+          const v = picks.reduce((x, y) => x + y.total, 0);
+          if (picks.length && (!bestS || v > bestS.v)) bestS = { c, picks, v };
+        }
+        return bestS;
+      };
+      const l = side(-1);
+      if (!l) continue;
+      const r = side(1);
+      if (!r || overlaps(l.picks, r.picks)) continue;
+      const v = vb.v + l.v + r.v;
+      if (!best || v > best.v)
+        best = {
+          v,
+          g: [
+            { role: 'forward', centre: l.c.p, picks: l.picks },
+            { role: 'forward', centre: b.p, picks: vb.picks },
+            { role: 'forward', centre: r.c.p, picks: r.picks },
+          ],
+        };
+    }
+    if (best) out.push({ type: 'threeUp', groups: best.g, quality: quality(best.g) });
+  }
+
+  // All-round strongpoint on a dominant feature.
+  if (want('strongpoint')) {
+    let best: { hub: Point; groups: Group[]; v: number } | null = null;
+    const hubs = centres.filter((_, k) => k % 2 === 0);
+    for (const h of hubs) {
+      const groups: Group[] = [];
+      let v = 0;
+      let ok = true;
+      for (const [deg, role] of [[0, 'forward'], [120, 'depth'], [240, 'depth']] as [number, PlatoonRole][]) {
+        const uu = rotate(u, deg);
+        const centre = { x: h.p.x + uu.x * 250, y: h.p.y + uu.y * 250 };
+        if (!inBox(centre)) { ok = false; break; }
+        const ar = area(centre, uu);
+        if (!ar.picks.length || groups.some((g) => overlaps(g.picks, ar.picks))) { ok = false; break; }
+        groups.push({ role, centre, picks: ar.picks, u: uu });
+        v += ar.v;
+      }
+      if (!ok) continue;
+      // A feature to hold: height over the ground around it, woods or buildings.
+      const hc = pointToCell(cg, h.p);
+      const z = cg.data[hc.row * cg.width + hc.col];
+      let ring = 0, k = 0;
+      for (let deg = 0; deg < 360; deg += 45) {
+        const q = { x: h.p.x + 500 * Math.sin((deg * Math.PI) / 180), y: h.p.y + 500 * Math.cos((deg * Math.PI) / 180) };
+        const qc = pointToCell(cg, q);
+        if (qc.col < 0 || qc.row < 0 || qc.col >= cg.width || qc.row >= cg.height) continue;
+        ring += cg.data[qc.row * cg.width + qc.col];
+        k++;
+      }
+      const prominence = k ? z - ring / k : 0;
+      const covered = ctx.obstacles && ctx.obstacles.heightM[hc.row * cg.width + hc.col] >= 2 ? 1 : 0;
+      const vv = v * (1 + Math.max(0, prominence) / 40 + 0.15 * covered);
+      if (!best || vv > best.v) best = { hub: h.p, groups, v: vv };
+    }
+    if (best) {
+      const hc = pointToCell(cg, best.hub);
+      const z = cg.data[hc.row * cg.width + hc.col];
+      let ring = 0, k = 0;
+      for (let deg = 0; deg < 360; deg += 45) {
+        const q = { x: best.hub.x + 500 * Math.sin((deg * Math.PI) / 180), y: best.hub.y + 500 * Math.cos((deg * Math.PI) / 180) };
+        const qc = pointToCell(cg, q);
+        if (qc.col < 0 || qc.row < 0 || qc.col >= cg.width || qc.row >= cg.height) continue;
+        ring += cg.data[qc.row * cg.width + qc.col];
+        k++;
+      }
+      const prominence = Math.max(0, k ? z - ring / k : 0);
+      out.push({ type: 'strongpoint', groups: best.groups, hub: best.hub, quality: quality(best.groups, Math.min(0.4, prominence / 50)) });
+    }
+  }
+
+  // Forward screen and main position.
+  if (want('screen')) {
+    const deep = centres.filter((c) => f(c.p) >= C.forwardMinM + 600);
+    let pair: [Cand, Cand] | null = null, pv = -Infinity;
+    for (const a of deep)
+      for (const b of deep) {
+        if (lat(a.p) >= lat(b.p)) continue;
+        const d = lat(b.p) - lat(a.p);
+        if (d < C.forwardSpacingM[0] || d > C.forwardSpacingM[1] || Math.abs(f(a.p) - f(b.p)) > C.forwardStaggerM) continue;
+        const va = at(a), vb = at(b);
+        if (overlaps(va.picks, vb.picks)) continue;
+        if (va.v + vb.v > pv) [pv, pair] = [va.v + vb.v, [a, b]];
+      }
+    if (pair) {
+      const used = [...at(pair[0]).picks, ...at(pair[1]).picks];
+      const mainF = Math.min(...used.map((c) => f(c.p)));
+      // Screen teams 500–900 m in front of the main position's forward positions: good observation, near the approaches, spread across them.
+      const forwardBand = cands
+        .filter((c) => f(c.p) >= mainF - 900 && f(c.p) <= mainF - 500 && Math.abs(lat(c.p) - mainLat(f(c.p))) <= 700 && !used.includes(c))
+        .sort((x, y) => y.total - x.total);
+      const teams: Cand[] = [];
+      for (const c of forwardBand) {
+        if (teams.length >= 3) break;
+        if (teams.every((t) => distance(t.p, c.p) >= 300)) teams.push(c);
+      }
+      if (teams.length >= 2) {
+        const cx = teams.reduce((a, t) => a + t.p.x, 0) / teams.length, cy = teams.reduce((a, t) => a + t.p.y, 0) / teams.length;
+        const g: Group[] = [
+          { role: 'forward', centre: pair[0].p, picks: at(pair[0]).picks },
+          { role: 'forward', centre: pair[1].p, picks: at(pair[1]).picks },
+          { role: 'screen', centre: { x: cx, y: cy }, picks: teams },
+        ];
+        out.push({ type: 'screen', groups: g, quality: quality(g) });
+      }
+    }
+  }
+
+  // Counter-attack force: two up, and a platoon in BMPs hidden behind with a way forward.
+  if (want('counterattack')) {
+    const midF = (f(L.pair[0].p) + f(L.pair[1].p)) / 2;
+    const midL = (lat(L.pair[0].p) + lat(L.pair[1].p)) / 2;
+    let bestP: Point | null = null, bestE = Infinity;
+    const half = (cg.width * cg.cellM) / 2;
+    for (let dF = 500; dF <= 1500; dF += 100)
+      for (let dL = -600; dL <= 600; dL += 100) {
+        const p = { x: u.x * (midF + dF) + u.y * (midL + dL), y: u.y * (midF + dF) - u.x * (midL + dL) };
+        const q = { x: p.x + ctx.start.x, y: p.y + ctx.start.y };
+        if (Math.abs(q.x) > half - C.edgeMarginM || Math.abs(q.y) > half - C.edgeMarginM || !standable(ctx, q)) continue;
+        const qc = pointToCell(cg, q);
+        const i = qc.row * cg.width + qc.col;
+        const exposure = ctx.attackerSees[i] / ctx.nViewpoints - (ctx.obstacles && ctx.obstacles.heightM[i] >= 2 ? 0.2 : 0);
+        if (exposure < bestE) [bestE, bestP] = [exposure, q];
+      }
+    if (bestP) {
+      const v = { x: u.y, y: -u.x };
+      const vehicles: Cand[] = [-80, 0, 80].map((l) => ({ p: { x: bestP!.x + v.x * l, y: bestP!.y + v.y * l }, total: 0, reverse: false, vs: new Uint8Array(0) }));
+      const g: Group[] = [twoUp[0], twoUp[1], { role: 'reserve', centre: bestP, picks: vehicles }];
+      // The forward platoons' quality, plus how well the reserve is hidden.
+      out.push({ type: 'counterattack', groups: g, quality: quality(g.slice(0, 2), 0.3 * Math.max(0, 1 - bestE)) });
+    }
+  }
+
+  // Echeloned along the main route, alternating sides.
+  if (want('echelon')) {
+    const near = (c: Cand, side: number, lo: number, hi: number) => {
+      const d = (lat(c.p) - mainLat(f(c.p))) * side;
+      return d >= lo && d <= hi;
+    };
+    let best: { groups: Group[]; v: number } | null = null;
+    const firsts = centres.filter((c) => f(c.p) <= C.forwardPreferredM && Math.abs(lat(c.p) - mainLat(f(c.p))) <= 250);
+    // Try the best few first positions on each side: the very best may leave no room for two more behind it.
+    const tops = [...firsts].sort((x, y) => at(y).v - at(x).v).filter((_, k) => k < 40 && k % 4 === 0);
+    for (const [sideFirst, a] of [1, -1].flatMap((sd) => tops.map((t) => [sd, t] as [number, Cand]))) {
+      const pa = at(a).picks;
+      const pick = (after: Cand, side: number, used: Cand[]) =>
+        cands
+          .filter((c) => f(c.p) - f(after.p) >= 300 && f(c.p) - f(after.p) <= 600 && near(c, side, 150, 500) && inBox(c.p))
+          .filter((_, k) => k % 2 === 0)
+          .map((c) => {
+            const picks = areaExcl(c.p, used);
+            return { c, picks, v: picks.reduce((x, y) => x + y.total, 0) };
+          })
+          .filter((x) => x.picks.length)
+          .sort((x, y) => y.v - x.v)[0];
+      const b = pick(a, sideFirst, pa);
+      if (!b) continue;
+      const cc = pick(b.c, -sideFirst, [...pa, ...b.picks]);
+      if (!cc) continue;
+      const g: Group[] = [
+        { role: 'forward', centre: a.p, picks: pa },
+        { role: 'depth', centre: b.c.p, picks: b.picks },
+        { role: 'depth', centre: cc.c.p, picks: cc.picks },
+      ];
+      const v = at(a).v + b.v + cc.v;
+      if (!best || v > best.v) best = { groups: g, v };
+    }
+    if (best) {
+      // Suits a channelled approach: the routes forward run close together.
+      const spread = L.routes.length > 1 ? Math.max(...L.routes.map((r) => Math.abs(lat(r[Math.floor(r.length / 2)]) - lat(L.routes[0][Math.floor(L.routes[0].length / 2)])))) : 0;
+      out.push({ type: 'echelon', groups: best.groups, quality: quality(best.groups, spread < 400 ? 0.3 : 0) });
+    }
+  }
+
+  // Always something: two up, one back.
+  if (!out.length) out.push({ type: 'twoUp', groups: twoUp, quality: quality(twoUp) });
+  return out;
+}
+
+/**
+ * Choose among the layouts that fit: the better the ground suits a layout, the
+ * likelier it is, with some variety (PO: chosen by the ground).
+ */
+function chooseVariant(vs: Variant[], random: (() => number) | null): Variant {
+  const best = Math.max(...vs.map((x) => x.quality));
+  // Without a seed (tests, the Developer page's default), the classic two up, one back if it fits.
+  if (!random) return vs.find((x) => x.type === 'twoUp') ?? vs.reduce((a, b) => (b.quality > a.quality ? b : a));
+  const T = Math.max(0.05, Math.abs(best) * 0.12);
+  const w = vs.map((x) => LAYOUT_PRIOR[x.type] * Math.exp((x.quality - best) / T));
+  let r = random() * w.reduce((a, b) => a + b, 0);
+  for (let k = 0; k < vs.length; k++) if ((r -= w[k]) <= 0) return vs[k];
+  return vs[vs.length - 1];
+}
+
+/** The first line of the DS notes, for each layout. */
+function layoutHeadline(type: LayoutType, dir: string, platoons: PlatoonArea[], lat: (p: Point) => number, f: (p: Point) => number, frontLine: number): string {
+  const fwdP = platoons.filter((p) => p.role === 'forward');
+  const spread = fwdP.length > 1 ? Math.round(Math.max(...fwdP.map((p) => lat(p.centre))) - Math.min(...fwdP.map((p) => lat(p.centre)))) : 0;
+  const ahead = `${Math.round(frontLine)} m ahead of you`;
+  switch (type) {
+    case 'twoUp':
+      return `Company defence blocking movement ${dir}, two up, one back: two platoons forward about ${spread} m apart and ${ahead}, one platoon in depth.`;
+    case 'oneUp':
+      return `Company defence blocking movement ${dir}, one up, two back: one platoon forward ${ahead}, two platoons in depth behind it.`;
+    case 'threeUp':
+      return `Company defence blocking movement ${dir}, three up: three platoons in line across about ${spread} m, ${ahead}, with nothing in depth.`;
+    case 'strongpoint':
+      return `All-round company strongpoint astride the route ${dir}: three platoons around one feature, facing outwards, the nearest ${ahead}.`;
+    case 'screen': {
+      const scr = platoons.find((p) => p.role === 'screen');
+      return `Company defence blocking movement ${dir} behind a forward screen: two platoons on the main position ${ahead}; a screen of small teams about ${scr ? Math.round(frontLine - f(scr.centre)) : 0} m in front of it.`;
+    }
+    case 'counterattack': {
+      const r = platoons.find((p) => p.role === 'reserve');
+      return `Company defence blocking movement ${dir}, two up, with a counter-attack force: two platoons forward ${ahead}; a platoon in BMPs held about ${r ? Math.round(f(r.centre) - frontLine) : 0} m behind, hidden, to counter-attack.`;
+    }
+    case 'echelon':
+      return `Company defence echeloned along the route ${dir}: platoons staggered in depth astride the route, alternating sides, the first ${ahead}.`;
+  }
 }
 
 /** The box edge nearest a bearing. */
@@ -512,52 +886,54 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
 
   const { side } = best;
   const L = best.L;
-  const { ctx, pair, fwdPicks, depthCentre, depthPicks, cands } = L;
+  const { ctx, cands } = L;
   const cg = ctx.cg;
   const u = ctx.u;
   const C = COMPANY;
   const N = cg.width * cg.height;
 
-  // Platoons and their positions.
-  const leftFirst = L.lat(pair[0].p) < L.lat(pair[1].p);
-  const forwardOrder = leftFirst ? [0, 1] : [1, 0];
+  // The layouts that fit this ground, and the one chosen (PO, 19 Nov 2026).
+  const variants = buildVariants(L, input.layout);
+  const pickRandom = input.seed === undefined ? null : rng(input.seed ^ 0x1a7);
+  const chosen = chooseVariant(variants, pickRandom);
+  const groups = chosen.groups;
+  log.push(`Layouts that fit: ${variants.map((x) => `${LAYOUT_NAMES[x.type]} (${x.quality.toFixed(2)})`).join('; ')}. Chosen: ${LAYOUT_NAMES[chosen.type]}.`);
+
+  // Platoons and their positions: forward platoons named left to right (En 1 Pl, En 2 Pl…), then the rest.
+  const order = [...groups].sort((x, y) => {
+    const rank = (g: Group) => ({ forward: 0, screen: 1, depth: 2, reserve: 3 })[g.role];
+    return rank(x) - rank(y) || L.lat(x.centre) - L.lat(y.centre);
+  });
   const platoons: PlatoonArea[] = [];
-  const posLabel = (k: number) => (options.dispersed ? `Team ${k + 1}` : `Section ${k + 1}`);
-  const men = options.dispersed ? 3 : 8;
-  forwardOrder.forEach((idx, k) => {
-    const picks = fwdPicks[idx];
+  const posLabel = (k: number, role: PlatoonRole) =>
+    role === 'screen' ? `Team ${k + 1}` : role === 'reserve' ? `Vehicle ${k + 1}` : options.dispersed ? `Team ${k + 1}` : `Section ${k + 1}`;
+  order.forEach((g, k) => {
     const name = `En ${k + 1} Pl`;
-    const positions: EnemyPosition[] = picks.map((c, j) => ({
-      kind: options.dispersed ? 'team' : 'section', platoon: name, label: `${name} ${posLabel(j)}`, point: c.p, men,
-    }));
-    const reverse = picks.length > 0 && picks[0].reverse;
+    const kind: PositionKind = g.role === 'screen' || options.dispersed ? 'team' : 'section';
+    const men = g.role === 'screen' ? 3 : g.role === 'reserve' ? 7 : options.dispersed ? 3 : 8;
+    const positions: EnemyPosition[] = g.picks.map((c, j) => ({ kind, platoon: name, label: `${name} ${posLabel(j, g.role)}`, point: c.p, men }));
+    const reverse = g.role === 'forward' && g.picks.length > 0 && g.picks[0].reverse;
     if (reverse) {
-      const crest = crestInFront(ctx, picks[0].p);
-      if (crest && standable(ctx, crest.point)) {
-        positions.push({ kind: 'outpost', platoon: name, label: `${name} outpost`, point: crest.point, men: 2 });
-      }
+      const crest = crestInFront(ctx, g.picks[0].p);
+      if (crest && standable(ctx, crest.point)) positions.push({ kind: 'outpost', platoon: name, label: `${name} outpost`, point: crest.point, men: 2 });
     }
     platoons.push({
-      name, role: 'forward', centre: pair[idx].p, reverseSlope: reverse,
-      outline: outline(pair[idx].p, u, C.platoonFrontM, C.platoonDepthM), positions,
+      name, role: g.role, centre: g.centre, reverseSlope: reverse,
+      outline: outline(g.centre, g.u ?? u, g.role === 'screen' ? 900 : C.platoonFrontM, g.role === 'screen' ? 400 : C.platoonDepthM), positions,
     });
   });
-  if (depthCentre) {
-    platoons.push({
-      name: 'En 3 Pl', role: 'depth', centre: depthCentre.p, reverseSlope: depthPicks[0]?.reverse ?? false,
-      outline: outline(depthCentre.p, u, C.platoonFrontM, C.platoonDepthM),
-      positions: depthPicks.map((c, j) => ({ kind: options.dispersed ? 'team' : 'section', platoon: 'En 3 Pl', label: `En 3 Pl ${posLabel(j)}`, point: c.p, men })),
-    });
-  }
+  // The forward line: the nearest main (forward) positions.
+  const mainFwd = groups.filter((g) => g.role === 'forward').flatMap((g) => g.picks);
+  const frontLine = Math.min(...mainFwd.map((c) => fwd(ctx, c.p)));
   const real = platoons.flatMap((p) => p.positions);
 
   // Company HQ: 150–400 m behind the depth platoon (or the forward line), as hidden as possible.
   let hq: EnemyPosition | null = null;
   {
-    const ref = depthCentre?.p ?? pair[0].p;
+    const ref = chosen.hub ?? (groups.find((g) => g.role === 'depth') ?? groups.find((g) => g.role === 'forward')!).centre;
     let bestHq: Point | null = null;
     let bestV = Infinity;
-    for (let b = 150; b <= 400; b += 50)
+    for (let b = chosen.hub ? 0 : 150; b <= (chosen.hub ? 100 : 400); b += 50)
       for (let l = -200; l <= 200; l += 50) {
         const p = { x: ref.x + u.x * b + (u.y) * l, y: ref.y + u.y * b + (-u.x) * l };
         if (!standable(ctx, p)) continue;
@@ -578,7 +954,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
       if (dummies.length >= 3) break;
       // Within the enemy's own area: up to 300 m in front of the forward line, 600 m behind it.
       const f = fwd(ctx, c.p);
-      if (f < L.frontLine - 300 || f > L.frontLine + 600) continue;
+      if (f < frontLine - 300 || f > frontLine + 600) continue;
       if (real.some((r) => distance(r.point, c.p) < 250) || dummies.some((d) => distance(d.point, c.p) < 250)) continue;
       dummies.push({ kind: 'dummy', platoon: '—', label: `Dummy ${dummies.length + 1}`, point: c.p, men: 0 });
     }
@@ -590,7 +966,9 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   const seen300 = new Uint8Array(N);
   const spec = POSTURES.prepared;
   const r2 = spec.rifleRangeM ** 2;
-  const fighting = real.filter((r) => r.kind !== 'outpost' && r.kind !== 'hq');
+  // The counter-attack force is mounted and held back: it does not cover ground by fire from where it waits.
+  const reserveNames = platoons.filter((p) => p.role === 'reserve').map((p) => p.name);
+  const fighting = real.filter((r) => r.kind !== 'outpost' && r.kind !== 'hq' && !reserveNames.includes(r.platoon));
   const views: Cand[] = [];
   for (const r of fighting) {
     const vs = viewshed(cg, r.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: spec.gunRangeM, obstacles: ctx.obstacles });
@@ -605,25 +983,27 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   const forwardReal = real.filter((r) => platoons.find((p) => p.name === r.platoon)?.role === 'forward' && r.kind !== 'outpost');
   const deadGround = new Uint8Array(N);
   for (let i = 0; i < N; i++) {
-    if (seen300[i] || F[i] > L.frontLine) continue;
+    if (seen300[i] || F[i] > frontLine) continue;
     if (forwardReal.some((r) => (X[i] - r.point.x) ** 2 + (Y[i] - r.point.y) ** 2 <= r2)) deadGround[i] = 1;
   }
 
-  // Gap between the forward platoons, and how well the depth platoon covers it.
+  // Gaps between neighbouring forward platoons, and how well the depth platoons cover them.
   const gaps: Gap[] = [];
   {
-    const a = platoons[0].positions.filter((p) => p.kind !== 'outpost');
-    const b = platoons[1].positions.filter((p) => p.kind !== 'outpost');
-    let dMin = Infinity;
-    let pa = a[0]?.point, pb = b[0]?.point;
-    for (const x of a) for (const y of b) if (distance(x.point, y.point) < dMin) [dMin, pa, pb] = [distance(x.point, y.point), x.point, y.point];
-    if (pa && pb) {
+    const fwdP = platoons.filter((p) => p.role === 'forward').sort((x, y) => L.lat(x.centre) - L.lat(y.centre));
+    const depthVs = platoons
+      .filter((p) => p.role === 'depth')
+      .flatMap((p) => p.positions)
+      .map((p) => viewshed(cg, p.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: 1000, obstacles: ctx.obstacles }));
+    for (let k = 1; k < fwdP.length; k++) {
+      const a = fwdP[k - 1].positions.filter((p) => p.kind !== 'outpost');
+      const b = fwdP[k].positions.filter((p) => p.kind !== 'outpost');
+      let dMin = Infinity;
+      let pa = a[0]?.point, pb = b[0]?.point;
+      for (const x of a) for (const y of b) if (distance(x.point, y.point) < dMin) [dMin, pa, pb] = [distance(x.point, y.point), x.point, y.point];
+      if (!pa || !pb) continue;
       const centre = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
-      // Cells within 150 m of the gap centre, in front of the depth platoon.
       let total = 0, covered = 0, any = 0;
-      const depthVs = platoons[2]
-        ? platoons[2].positions.map((p) => viewshed(cg, p.point, { obsHeightM: spec.eyeM, targetHeightM: SECTION_SCORING.attackerHeightM, maxRangeM: 1000, obstacles: ctx.obstacles }))
-        : [];
       for (let i = 0; i < N; i++) {
         if ((X[i] - centre.x) ** 2 + (Y[i] - centre.y) ** 2 > 150 * 150) continue;
         total++;
@@ -656,7 +1036,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
           }
       }
     for (let i = 0; i < N; i++) {
-      const f = L.frontLine - F[i];
+      const f = frontLine - F[i];
       if (f < C.mineFromM || f > C.mineFromM + depth) continue;
       if (L.frames.Lt[i] < lo || L.frames.Lt[i] > hi) continue;
       if (!nearRoute[i] || !(killZone[i] || deadGround[i] || L.fwdDead[i])) continue;
@@ -680,15 +1060,11 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
 
   // Reasons (for the DS), from the computed facts.
   const reasons: string[] = [];
-  reasons.push(
-    `Company strongpoint blocking movement ${DIR(side)}: two platoons forward about ${Math.round(
-      Math.abs(L.lat(pair[0].p) - L.lat(pair[1].p)),
-    )} m apart and ${Math.round(L.frontLine)} m ahead of you, one platoon in depth.`,
-  );
+  reasons.push(layoutHeadline(chosen.type, DIR(side), platoons, L.lat, (p) => fwd(ctx, p), frontLine));
   for (const p of platoons) {
     const s = p.positions.filter((x) => x.kind !== 'outpost').length;
     reasons.push(
-      `${p.name} (${p.role}): ${s} ${options.dispersed ? 'small teams' : 'sections'}${p.reverseSlope ? ', on a reverse slope behind a crest' : ''}` +
+      `${p.name} (${ROLE_NAMES[p.role]}): ${s} ${p.role === 'screen' ? 'small teams' : p.role === 'reserve' ? 'vehicles (BMPs)' : options.dispersed ? 'small teams' : 'sections'}${p.reverseSlope ? ', on a reverse slope behind a crest' : ''}` +
         `${p.positions.some((x) => x.kind === 'outpost') ? ', with an outpost on the crest' : ''}.`,
     );
   }
@@ -700,7 +1076,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   );
   if (gaps[0]) {
     reasons.push(
-      `Gap between En 1 and En 2 Pl: about ${Math.round(gaps[0].widthM)} m between their nearest positions. Of the ground within 150 m of its centre, ` +
+      `Gap between the forward platoons: about ${Math.round(gaps[0].widthM)} m between their nearest positions. Of the ground within 150 m of its centre, ` +
         `the depth platoon sees ${pct(gaps[0].coveredFromDepth)} and the company as a whole ${pct(gaps[0].coveredByAny)}.` +
         (gaps[0].coveredByAny < 0.5 ? ' The gap is poorly covered by fire: a weakness in this defence.' : ''),
     );
@@ -720,6 +1096,7 @@ export function placeEnemyCompany(input: CompanyInput): CompanyLayout | null {
   if (options.isrFires) reasons.push('The enemy has drone surveillance over the approaches and indirect fire on call.');
 
   return {
+    layout: chosen.type,
     attackerSide: nearestSide((side + 180) % 360),
     advanceBearingDeg: side,
     routes: L.routes,

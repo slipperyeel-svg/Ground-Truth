@@ -76,3 +76,16 @@ describe('where each element is when the situation develops', () => {
     expect(Math.abs(walked1 - walked2)).toBeLessThan(25);
   });
 });
+
+describe('counter-attack (PO, 19 Nov 2026)', () => {
+  it('the hidden reserve counter-attacks when you close on the position', () => {
+    const LC = placeEnemyCompany({ grid: ground, layers: null, sides: ['S'], layout: 'counterattack', options: { mines: false, dummies: false, dispersed: false, droneConcealment: false, isrFires: false } })!;
+    expect(LC.layout).toBe('counterattack');
+    const target = LC.platoons.find((p) => p.role === 'forward')!.centre;
+    const d = developFromPlan(ground, null, LC, { routes: [{ who: '1 Section', points: [{ x: 0, y: 0 }, target] }], positions: [] }, start, ref, hhmm);
+    const all = d.messages.map((m) => m.text).join(' ');
+    // Either the counter-attack, or fire from the forward positions first and the counter-attack soon after.
+    expect(all).toMatch(/counter-attack|fire from about/);
+    expect(d.sightings.some((x) => x.label === 'BMP') || /fire from about/.test(all)).toBe(true);
+  });
+});

@@ -43,7 +43,7 @@ import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
 import { BOX_M } from './worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
-import type { CompanyOptions } from './tactics/companyDefence';
+import type { CompanyOptions, LayoutType } from './tactics/companyDefence';
 import type { InfoLevel, TaskType } from './tactics/platoonScenario';
 import type { Intel, Posture } from './tactics/sectionDefence';
 
@@ -760,9 +760,11 @@ function renderSituation() {
     const co = scenario.company;
     for (const pl of co.platoons!) {
       // Each platoon is shown by its dashed outline and label; its sections and teams carry the symbols.
+      // The counter-attack force: a platoon in BMPs, shown as mechanised infantry.
+      const mounted = pl.role === 'reserve';
       for (const x of pl.positions) {
         const echelon: Echelon = x.kind === 'section' ? 'section' : 'team';
-        units.push(unitFeature(x.point, { identity: 'hostile', echelon }, {}, x.kind === 'outpost' ? 'OP' : ''));
+        units.push(unitFeature(x.point, { identity: 'hostile', echelon, kind: mounted ? 'mechanisedInfantry' : 'infantry' }, {}, x.kind === 'outpost' ? 'OP' : mounted ? 'BMP' : ''));
       }
     }
     if (co.hq) units.push(unitFeature(co.hq.point, { identity: 'hostile', echelon: 'company', hq: true }));
@@ -990,16 +992,17 @@ async function runScenarioInner(
     // The Problem of the day ignores the options, so it is the same for everyone.
     const task = kind === 'daily' ? '' : (($('sel-task') as HTMLSelectElement).value as TaskType | '');
     const info = kind === 'daily' ? '' : (($('sel-info') as HTMLSelectElement).value as InfoLevel | '');
+    const layoutChoice = resume?.problem.layout ?? (kind === 'daily' ? '' : ($('sel-layout') as HTMLSelectElement).value);
     const now = resume?.problem.now ?? opts.now ?? problemTime();
     const label = resume?.problem.label ?? opts.label;
-    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now }, status);
+    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now, layout: (layoutChoice || undefined) as LayoutType | undefined }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
       status('No problem fits here');
       return;
     }
     $('sc-note').textContent = scenario.featureNote;
-    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label };
+    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label, layout: layoutChoice };
     plan = resume ? resume.plan : Plan.emptyPlan();
     if (kind === 'quick') {
       scenario.scenario.questions = QUICK_QUESTIONS;
@@ -1473,7 +1476,7 @@ async function runCompany(seed: number) {
   $('company-block').hidden = false;
   setBusy(true);
   try {
-    company = await engine.company(companyOptions(), seed, status);
+    company = await engine.company(companyOptions(), seed, status, (($('sel-co-layout') as HTMLSelectElement).value || undefined) as LayoutType | undefined);
     $('co-note').textContent = company.featureNote;
     if (!company.found) {
       $('co-note').textContent = `${company.featureNote} ${company.log.join(' ')}`;
