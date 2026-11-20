@@ -5,7 +5,7 @@ import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
 import type { LayoutType, PlatoonRole, SpreadName, CompanyOptions, PositionKind } from '../tactics/companyDefence';
-import type { InfoLevel, PlatoonScenario, TaskType } from '../tactics/platoonScenario';
+import type { InfoLevel, LaneMode, PlatoonScenario, TaskType } from '../tactics/platoonScenario';
 import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
 import type { ContourLine } from '../terrain/contours';
@@ -81,6 +81,8 @@ export type WorkerRequest =
       layout?: LayoutType;
       /** Force how spread out the enemy is (the DS); otherwise chosen at random. */
       spread?: SpreadName;
+      /** Force how much of the enemy lies inside your boundaries (the DS). */
+      lane?: LaneMode;
       /** The time the problem is set for (ms since 1970), so a resumed problem reads the same. */
       now?: number;
     }

@@ -44,7 +44,7 @@ import { latLonToLocal, localToLatLon } from './terrain/elevation';
 import { BOX_M } from './worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
 import type { CompanyOptions, LayoutType, SpreadName } from './tactics/companyDefence';
-import type { InfoLevel, TaskType } from './tactics/platoonScenario';
+import type { InfoLevel, LaneMode, TaskType } from './tactics/platoonScenario';
 import type { Intel, Posture } from './tactics/sectionDefence';
 
 // ---------- state ----------
@@ -996,14 +996,15 @@ async function runScenarioInner(
     const spreadChoice = resume?.problem.spread ?? (kind === 'daily' ? '' : ($('sel-spread') as HTMLSelectElement).value);
     const now = resume?.problem.now ?? opts.now ?? problemTime();
     const label = resume?.problem.label ?? opts.label;
-    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now, layout: (layoutChoice || undefined) as LayoutType | undefined, spread: (spreadChoice || undefined) as SpreadName | undefined }, status);
+    const laneChoice = resume?.problem.lane ?? (kind === 'daily' ? '' : ($('sel-lane') as HTMLSelectElement).value);
+    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now, layout: (layoutChoice || undefined) as LayoutType | undefined, spread: (spreadChoice || undefined) as SpreadName | undefined, lane: (laneChoice || undefined) as LaneMode | undefined }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
       status('No problem fits here');
       return;
     }
     $('sc-note').textContent = scenario.featureNote;
-    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label, layout: layoutChoice, spread: spreadChoice };
+    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label, layout: layoutChoice, spread: spreadChoice, lane: laneChoice };
     plan = resume ? resume.plan : Plan.emptyPlan();
     if (kind === 'quick') {
       scenario.scenario.questions = QUICK_QUESTIONS;

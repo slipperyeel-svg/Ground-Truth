@@ -53,6 +53,8 @@ export interface ProblemKey {
   layout?: string;
   /** The enemy spacing the DS chose, if any. */
   spread?: string;
+  /** How much of the enemy lies inside your boundaries, if the DS chose. */
+  lane?: string;
 }
 
 export interface SavedPlan {

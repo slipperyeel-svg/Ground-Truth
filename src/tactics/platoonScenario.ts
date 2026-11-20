@@ -24,6 +24,10 @@ import { hhmm, sunTimes } from './sun';
 
 export type TaskType = 'secure' | 'neutralise' | 'findFix' | 'screen';
 export type InfoLevel = 'rich' | 'partial' | 'poor';
+/** How much of the enemy you are tasked against lies inside your boundaries (PO, 20 Nov 2026). */
+export type LaneMode = 'whole' | 'most' | 'part';
+/** How often each is chosen when the DS has not chosen (first figures; DECISIONS.md 203). */
+export const LANE_WEIGHTS: Record<LaneMode, number> = { whole: 0.4, most: 0.35, part: 0.25 };
 
 export const TASK_LABEL: Record<TaskType, string> = {
   secure: 'Secure ground beyond',
@@ -213,6 +217,8 @@ export interface ScenarioInput {
   task?: TaskType;
   info?: InfoLevel;
   seed: number;
+  /** Force how much of the enemy lies inside your boundaries (the DS); otherwise chosen at random. */
+  lane?: LaneMode;
   /** "Now", for the date and light. Default: the current time. */
   now?: Date;
   /** Time zone for clock times (the device's, by default). */
@@ -719,19 +725,70 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   // The B/A boundary follows lines on the ground where it can (PO, 15 Nov
   // 2026): roads, tracks, streams, hedges, railways and wood edges, within
   // maxDev of the straight line, so it stays between the units either side.
-  // Your lane (PO, 15 Nov 2026: the enemy you are tasked against should lie mostly inside
-  // your boundaries): centred on you at the start line, then bending so that by the
-  // enemy's depth it is centred on that enemy (or on your objective, or the flank you screen).
+  // Your lane (PO, 15 Nov 2026): centred on you at the start line, then bending
+  // towards the enemy you are tasked against. How much of that enemy it takes in
+  // varies (PO, 20 Nov 2026; DECISIONS.md 203): all of it, most of it, or only part
+  // of it, with the rest in 1 Pl's lane or across the battlegroup boundary.
   const target = task === 'screen' ? [objective.point] : blocking.positions.map((x) => x.point);
-  const laneC1 = target.reduce((a2, q) => a2 + lat(q), 0) / target.length;
-  const laneF1 = Math.max(300, target.reduce((a2, q) => a2 + fwd(q), 0) / target.length);
+  const rl = rng(input.seed ^ 0xb0d);
+  const rollLane = rl();
+  let laneMode: LaneMode =
+    task === 'screen' ? 'most' : input.lane ?? (rollLane < LANE_WEIGHTS.whole ? 'whole' : rollLane < LANE_WEIGHTS.whole + LANE_WEIGHTS.most ? 'most' : 'part');
+  const tLats = target.map(lat).sort((a2, b2) => a2 - b2);
+  const tMean = tLats.reduce((a2, b2) => a2 + b2, 0) / tLats.length;
+  const tFwds = target.map(fwd);
+  const tFwdMin = Math.min(...tFwds), tFwdMax = Math.max(...tFwds);
+  const baseDev = Math.min(300, spacing * 0.35);
+  // Near the enemy the boundaries keep close to their line, so they do not clip
+  // a position in or out by accident; elsewhere they follow the ground as before.
+  let nearDev = baseDev;
+  let halfW = spacing / 2;
+  let laneC1 = tMean;
+  let partSide = 0; // for 'part': +1 if the lane lies to the right of the cut (looking forward)
+  if (laneMode === 'whole') {
+    nearDev = Math.min(baseDev, 80);
+    halfW = Math.max(spacing / 2, (tLats[tLats.length - 1] - tLats[0]) / 2 + nearDev + 60);
+    laneC1 = (tLats[0] + tLats[tLats.length - 1]) / 2;
+  } else if (laneMode === 'part' && tLats.length >= 2) {
+    // Leave a third to a half of the positions outside, on a side chosen at random.
+    const n = tLats.length;
+    const want = n * (0.33 + rl() * 0.17);
+    // Cut only where there is a real gap across the front between positions (not
+    // through positions side by side), leaving 20–60% outside, as near as possible
+    // to the share wanted; on the side chosen at random if it allows a cut.
+    const cutFor = (side: number) => {
+      const sorted = side > 0 ? tLats : [...tLats].reverse(); // excluded positions first
+      let k0 = 0;
+      for (let k = 1; k < n; k++)
+        if (Math.abs(sorted[k] - sorted[k - 1]) >= 40 && k / n >= 0.2 && k / n <= 0.6 && (!k0 || Math.abs(k - want) < Math.abs(k0 - want))) k0 = k;
+      return k0 ? { side, a: sorted[k0 - 1], b: sorted[k0] } : null;
+    };
+    const first = rl() < 0.5 ? 1 : -1;
+    const c = cutFor(first) ?? cutFor(-first);
+    if (c) {
+      partSide = c.side;
+      nearDev = Math.max(15, Math.min(baseDev, Math.abs(c.b - c.a) / 2 - 15));
+      laneC1 = (c.a + c.b) / 2 + partSide * halfW;
+    } else laneMode = 'most'; // every position on one line across the front: no clean cut
+  }
+  const laneF1 = laneMode === 'most'
+    ? Math.max(300, tFwds.reduce((a2, b2) => a2 + b2, 0) / tFwds.length)
+    : Math.max(300, tFwdMin - 200);
   const laneC = (f: number) => (f <= 0 ? 0 : f >= laneF1 ? laneC1 : (laneC1 * f) / laneF1);
-  const followGround = (offset: number, maxDev: number) => {
+  const devAt = (f: number) => (f >= tFwdMin - 250 && f <= tFwdMax + 250 ? nearDev : baseDev);
+  const followGround = (offset: number) => {
     const nominal = (f: number) => laneC(f) + offset;
     const f0 = -1200, f1 = bgObjFwd + 300;
     const a = clampBox({ x: u.x * f0 + v.x * nominal(f0), y: u.y * f0 + v.y * nominal(f0) });
     const b = clampBox({ x: u.x * f1 + v.x * nominal(f1), y: u.y * f1 + v.y * nominal(f1) });
-    if (!lay) return { path: [a, b], follows: '' };
+    // Without map features: the nominal line itself, so it still bends onto the enemy.
+    const straight = () => {
+      const pts: Point[] = [];
+      for (let f = f0; f < f1; f += 100) pts.push(clampBox({ x: u.x * f + v.x * nominal(f), y: u.y * f + v.y * nominal(f) }));
+      pts.push(b);
+      return { path: pts, follows: '' };
+    };
+    if (!lay) return straight();
     const W = cg.width, Hh = cg.height;
     const woodEdge = (i: number) => {
       if (lay.cover[i] !== COVER.wood) return false;
@@ -751,16 +808,17 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     const cost = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const q = cellToPoint(cg, i % W, Math.floor(i / W));
+      const maxDev = devAt(fwd(q));
       const dev = Math.abs(lat(q) - nominal(fwd(q)));
       if (dev > maxDev) { cost[i] = Infinity; continue; }
       cost[i] = (featureAt(i) ? 0.15 : 1) + (dev / maxDev) ** 2 * 0.5;
     }
     const s0 = cellOf(a), e0 = cellOf(b);
-    if (s0 < 0 || e0 < 0) return { path: [a, b], follows: '' };
+    if (s0 < 0 || e0 < 0) return straight();
     const { prev } = costDistance(cg, cost, [s0]);
     const cells: number[] = [];
     for (let i = e0; i >= 0; i = prev[i]) cells.push(i);
-    if (cells[cells.length - 1] !== s0) return { path: [a, b], follows: '' };
+    if (cells[cells.length - 1] !== s0) return straight();
     cells.reverse();
     const tally: Record<string, number> = {};
     for (const i of cells) { const f = featureAt(i); if (f) tally[f] = (tally[f] ?? 0) + 1; }
@@ -768,13 +826,12 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     const path = cells.filter((_, k) => k % 5 === 0 || k === cells.length - 1).map((i) => cellToPoint(cg, i % W, Math.floor(i / W)));
     return { path, follows: top && top[1] * cg.cellM >= 400 ? top[0] : '' };
   };
-  const maxDev = Math.min(300, spacing * 0.35);
   // Boundaries (PO, 15 Nov 2026): B/A company boundary beyond 1 Pl; the 1 Pl / 2 Pl platoon
   // boundary between you and 1 Pl; the battlegroup boundary on your open flank.
-  const boundary = followGround(onePlSide * spacing * 1.5, maxDev);
-  const plBoundary = followGround(onePlSide * spacing * 0.5, maxDev);
-  const bgBoundary = followGround(-onePlSide * spacing * 0.5, maxDev);
-  const lineEnds = [0, laneC1].flatMap((c0) => [c0 - onePlSide * spacing * 0.5, c0 + aCoyLat + onePlSide * spacing]);
+  const boundary = followGround(onePlSide * (halfW + spacing));
+  const plBoundary = followGround(onePlSide * halfW);
+  const bgBoundary = followGround(-onePlSide * halfW);
+  const lineEnds = [0, laneC1].flatMap((c0) => [c0 - onePlSide * halfW, c0 + aCoyLat + onePlSide * spacing]);
   const lineLo = Math.min(...lineEnds) - 300;
   const lineHi = Math.max(...lineEnds) + 300;
   const control: ScenarioMarkers['control'] = [
@@ -845,6 +902,31 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     ds.push(
       `The obvious route to ${objective.name} (the easiest going): ${km(d.lengthM)}, ${pct(d.underFire)} of it under enemy fire` +
         `${d.minesCrossed ? `, crossing mines` : ''}.`,
+    );
+  }
+  if (task !== 'screen') {
+    // How much of the enemy you were tasked against lay inside your boundaries.
+    const latAt = (path: Point[], f: number) => {
+      let best = path[0];
+      for (const q of path) if (Math.abs(fwd(q) - f) < Math.abs(fwd(best) - f)) best = q;
+      return lat(best);
+    };
+    const outPl: EnemyPosition[] = [], outBg: EnemyPosition[] = [];
+    for (const x of blocking.positions) {
+      const lp = lat(x.point), a2 = latAt(plBoundary.path, fwd(x.point)), b2 = latAt(bgBoundary.path, fwd(x.point));
+      if ((lp - a2) * onePlSide > 0) outPl.push(x);
+      else if ((lp - b2) * -onePlSide > 0) outBg.push(x);
+    }
+    const n = blocking.positions.length, nIn = n - outPl.length - outBg.length;
+    const where = [
+      outPl.length ? `${outPl.length} lay in 1 Pl's lane, across your platoon boundary` : '',
+      outBg.length ? `${outBg.length} lay across the battlegroup boundary, in the area of ${neighbour.short}` : '',
+    ].filter(Boolean).join(', and ');
+    const nOut = n - nIn;
+    ds.push(
+      nIn === n
+        ? `Your boundaries took in all ${n} of ${blocking.name}'s positions.`
+        : `Your boundaries took in ${nIn} of ${blocking.name}'s ${n} positions; ${where}. Who was to deal with ${nOut > 1 ? 'those' : 'that one'}, and could you fire across the boundary, or did you need to ask for it to be moved?`,
     );
   }
   if (L.gaps[0]) ds.push(`The gap between the enemy forward platoons is about ${km(L.gaps[0].widthM)} wide, centred on ${ref(L.gaps[0].centre)}.`);

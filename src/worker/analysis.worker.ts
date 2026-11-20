@@ -313,7 +313,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       }
       lastScenarioLayout = L;
       progress('Writing the problem…');
-      const sc = writePlatoonScenario({ grid, layers, obstacles, layout: L, task: req.task, info: req.info, seed: req.seed, now: req.now ? new Date(req.now) : undefined });
+      const sc = writePlatoonScenario({ grid, layers, obstacles, layout: L, task: req.task, info: req.info, seed: req.seed, lane: req.lane, now: req.now ? new Date(req.now) : undefined });
       const keep = (_: unknown, k: number, a: unknown[]) => k % 3 === 0 || k === a.length - 1;
       const company = companyView(grid, L, performance.now() - t0);
       const view: ScenarioView = {

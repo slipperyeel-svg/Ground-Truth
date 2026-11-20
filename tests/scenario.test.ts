@@ -107,7 +107,7 @@ describe('time allowed varies (PO, 15 Nov 2026)', () => {
   });
 });
 
-describe('your enemy lies mostly inside your boundaries (PO, 15 Nov 2026)', () => {
+describe('how much of your enemy lies inside your boundaries (PO, 15 and 20 Nov 2026)', () => {
   const u = { x: Math.sin((layout.advanceBearingDeg * Math.PI) / 180), y: Math.cos((layout.advanceBearingDeg * Math.PI) / 180) };
   const v = { x: u.y, y: -u.x };
   const fwd = (p: { x: number; y: number }) => p.x * u.x + p.y * u.y;
@@ -118,20 +118,46 @@ describe('your enemy lies mostly inside your boundaries (PO, 15 Nov 2026)', () =
     for (const q of path) if (Math.abs(fwd(q) - f) < Math.abs(fwd(best) - f)) best = q;
     return lat(best);
   };
-  for (const task of ['secure', 'neutralise', 'findFix'] as TaskType[])
-    it(`${task}: at least 60% of one forward enemy platoon is in your lane`, () => {
-      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 7, task, info: 'rich', now, timeZone: 'UTC' });
-      const pl = s.markers.control.find((c) => c.label === '•••')!.path;
-      const bg = s.markers.control.find((c) => c.label === 'II')!.path;
-      const share = layout.platoons
-        .filter((p) => p.role === 'forward')
-        .map((p) => {
-          const inside = p.positions.filter((x) => {
-            const a = latAt(pl, fwd(x.point)), b = latAt(bg, fwd(x.point));
-            return lat(x.point) >= Math.min(a, b) && lat(x.point) <= Math.max(a, b);
-          });
-          return inside.length / p.positions.length;
+  const insideShare = (s: ReturnType<typeof writePlatoonScenario>) => {
+    const pl = s.markers.control.find((c) => c.label === '•••')!.path;
+    const bg = s.markers.control.find((c) => c.label === 'II')!.path;
+    return layout.platoons
+      .filter((p) => p.role === 'forward')
+      .map((p) => {
+        const inside = p.positions.filter((x) => {
+          const a = latAt(pl, fwd(x.point)), b = latAt(bg, fwd(x.point));
+          return lat(x.point) >= Math.min(a, b) && lat(x.point) <= Math.max(a, b);
         });
-      expect(Math.max(...share)).toBeGreaterThanOrEqual(0.6);
+        return inside.length / p.positions.length;
+      });
+  };
+  for (const task of ['secure', 'neutralise', 'findFix'] as TaskType[]) {
+    it(`${task}, "most of it": at least 60% of one forward enemy platoon is in your lane`, () => {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 7, task, info: 'rich', lane: 'most', now, timeZone: 'UTC' });
+      expect(Math.max(...insideShare(s))).toBeGreaterThanOrEqual(0.6);
     });
+    it(`${task}, "all of it": every position of one forward enemy platoon is in your lane`, () => {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 7, task, info: 'rich', lane: 'whole', now, timeZone: 'UTC' });
+      expect(Math.max(...insideShare(s))).toBe(1);
+      expect(s.ds.join(' ')).toMatch(/took in all \d+ of/);
+    });
+    it(`${task}, "only part of it": a boundary cuts the enemy platoon you are tasked against`, () => {
+      for (const seed of [7, 8, 9]) {
+        const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed, task, info: 'rich', lane: 'part', now, timeZone: 'UTC' });
+        const note = s.ds.find((d) => /Your boundaries took in/.test(d))!;
+        const [, nIn, n] = note.match(/took in (\d+) of .*'s (\d+) positions/)!;
+        expect(+nIn).toBeGreaterThan(0);
+        expect(+nIn).toBeLessThan(+n);
+        expect(+nIn / +n).toBeGreaterThanOrEqual(0.4);
+      }
+    });
+  }
+  it('without a DS choice, problems vary in how much of the enemy is inside', () => {
+    const notes = new Set<string>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed, task: 'secure', info: 'rich', now, timeZone: 'UTC' });
+      notes.add(/took in all/.test(s.ds.join(' ')) ? 'all' : 'some');
+    }
+    expect(notes.size).toBe(2);
+  });
 });
