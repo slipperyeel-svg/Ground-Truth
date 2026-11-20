@@ -51,6 +51,8 @@ export interface ProblemKey {
   label?: string;
   /** The enemy layout the DS chose, if any ('' or absent: the ground decided). */
   layout?: string;
+  /** The enemy spacing the DS chose, if any. */
+  spread?: string;
 }
 
 export interface SavedPlan {

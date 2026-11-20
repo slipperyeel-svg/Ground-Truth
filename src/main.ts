@@ -43,7 +43,7 @@ import { gridLines } from './geo/gridlines';
 import { latLonToLocal, localToLatLon } from './terrain/elevation';
 import { BOX_M } from './worker/protocol';
 import type { CompanyView, ScenarioView, DemoTerrain, Detail, LoadedGround, ProblemView, SectionView } from './worker/protocol';
-import type { CompanyOptions, LayoutType } from './tactics/companyDefence';
+import type { CompanyOptions, LayoutType, SpreadName } from './tactics/companyDefence';
 import type { InfoLevel, TaskType } from './tactics/platoonScenario';
 import type { Intel, Posture } from './tactics/sectionDefence';
 
@@ -993,16 +993,17 @@ async function runScenarioInner(
     const task = kind === 'daily' ? '' : (($('sel-task') as HTMLSelectElement).value as TaskType | '');
     const info = kind === 'daily' ? '' : (($('sel-info') as HTMLSelectElement).value as InfoLevel | '');
     const layoutChoice = resume?.problem.layout ?? (kind === 'daily' ? '' : ($('sel-layout') as HTMLSelectElement).value);
+    const spreadChoice = resume?.problem.spread ?? (kind === 'daily' ? '' : ($('sel-spread') as HTMLSelectElement).value);
     const now = resume?.problem.now ?? opts.now ?? problemTime();
     const label = resume?.problem.label ?? opts.label;
-    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now, layout: (layoutChoice || undefined) as LayoutType | undefined }, status);
+    scenario = await engine.scenario({ task: task || undefined, info: info || undefined, options: {}, seed, now, layout: (layoutChoice || undefined) as LayoutType | undefined, spread: (spreadChoice || undefined) as SpreadName | undefined }, status);
     if (!scenario.found || !scenario.scenario) {
       $('sc-note').textContent = `${scenario.featureNote} ${scenario.log.join(' ')} Try a point a little way off.`;
       status('No problem fits here');
       return;
     }
     $('sc-note').textContent = scenario.featureNote;
-    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label, layout: layoutChoice };
+    problemKey = { lat: box.centre.lat, lon: box.centre.lon, seed, task, info, detail: chosenDetail(), now, kind, label, layout: layoutChoice, spread: spreadChoice };
     plan = resume ? resume.plan : Plan.emptyPlan();
     if (kind === 'quick') {
       scenario.scenario.questions = QUICK_QUESTIONS;

@@ -4,7 +4,7 @@ import type { DevelopedSituation } from '../tactics/planEvents';
 import type { ElevationMeta, Point } from '../terrain/grid';
 import type { ProblemText } from '../tactics/problem';
 import type { Intel, Posture } from '../tactics/sectionDefence';
-import type { LayoutType, PlatoonRole, CompanyOptions, PositionKind } from '../tactics/companyDefence';
+import type { LayoutType, PlatoonRole, SpreadName, CompanyOptions, PositionKind } from '../tactics/companyDefence';
 import type { InfoLevel, PlatoonScenario, TaskType } from '../tactics/platoonScenario';
 import type { SectionScenarioText } from '../tactics/sectionScenario';
 import type { GroundClassification } from '../terrain/classify';
@@ -79,6 +79,8 @@ export type WorkerRequest =
       seed: number;
       /** Force the enemy's layout (the DS); otherwise the ground decides. */
       layout?: LayoutType;
+      /** Force how spread out the enemy is (the DS); otherwise chosen at random. */
+      spread?: SpreadName;
       /** The time the problem is set for (ms since 1970), so a resumed problem reads the same. */
       now?: number;
     }

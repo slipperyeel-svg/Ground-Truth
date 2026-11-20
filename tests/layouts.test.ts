@@ -54,3 +54,30 @@ describe('enemy company layouts (PO, 19 Nov 2026)', () => {
     expect(seen.size).toBeGreaterThan(1);
   }, 300_000);
 });
+
+describe('spacing between enemy elements varies (PO, 20 Nov 2026)', () => {
+  const at = (spread: 'close' | 'very wide') =>
+    placeEnemyCompany({ grid: ground, layers: null, sides: ['S'], options: opts, layout: 'twoUp', spread })!;
+  /** Smallest distance between two sections of the same platoon, over the company. */
+  const minSpacing = (L: ReturnType<typeof at>) => {
+    let m = Infinity;
+    for (const p of L.platoons) {
+      const s = p.positions.filter((x) => x.kind === 'section');
+      for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) m = Math.min(m, Math.hypot(s[i].point.x - s[j].point.x, s[i].point.y - s[j].point.y));
+    }
+    return m;
+  };
+  it('a very wide company is spread wider than a close one', () => {
+    const close = at('close'), wide = at('very wide');
+    expect(close.spread.name).toBe('close');
+    expect(wide.spread.factor).toBe(1.6);
+    expect(minSpacing(close)).toBeGreaterThanOrEqual(74);
+    expect(minSpacing(wide)).toBeGreaterThanOrEqual(159);
+    expect(wide.reasons.join(' ')).toMatch(/Spacing: very wide/);
+  }, 120_000);
+  it('seeded problems vary the spacing', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 10; seed++) seen.add(placeEnemyCompany({ grid: ground, layers: null, sides: ['S'], options: opts, layout: 'twoUp', seed })!.spread.name);
+    expect(seen.size).toBeGreaterThan(1);
+  }, 300_000);
+});

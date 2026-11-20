@@ -306,7 +306,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const progress = (message: string) => post({ type: 'progress', id: req.id, message });
       const t0 = performance.now();
       await ensureLayers(progress);
-      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, layout: req.layout, progress });
+      const L = placeEnemyCompany({ grid, layers, obstacles, options: req.options, seed: req.seed, layout: req.layout, spread: req.spread, progress });
       if (!L) {
         post({ type: 'scenario', id: req.id, result: { found: false, log: ['No sensible enemy defence fits ahead of you in any direction.'], featureNote, timeMs: Math.round(performance.now() - t0) } });
         return;
