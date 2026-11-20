@@ -130,10 +130,11 @@ export type PositionKind = 'section' | 'team' | 'outpost' | 'hq' | 'dummy';
  */
 export type SpreadName = 'close' | 'standard' | 'wide' | 'very wide';
 export const SPREADS: { name: SpreadName; factor: number; weight: number }[] = [
-  { name: 'close', factor: 0.75, weight: 1 },
-  { name: 'standard', factor: 1, weight: 2 },
-  { name: 'wide', factor: 1.3, weight: 1.5 },
-  { name: 'very wide', factor: 1.6, weight: 1 },
+  // PO, 20 Nov 2026: favour the wider set-ups, given how common they now are.
+  { name: 'close', factor: 0.75, weight: 0.5 },
+  { name: 'standard', factor: 1, weight: 1 },
+  { name: 'wide', factor: 1.3, weight: 2 },
+  { name: 'very wide', factor: 1.6, weight: 2 },
 ];
 
 /**
