@@ -82,10 +82,31 @@ describe('objectives and boundaries (PO, 15 Nov 2026)', () => {
     expect(s.markers.task.code).not.toBe(s.markers.bgObjective.name);
     expect(s.task_text).toContain(s.markers.task.code!);
   });
-  it('draws a platoon boundary with 1 Pl, the B/A company boundary and the battlegroup boundary', () => {
-    const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed: 3, now, timeZone: 'Europe/London' });
-    const b = s.markers.control.filter((c) => c.kind === 'boundary').map((c) => c.label).sort();
-    expect(b).toEqual(['I', 'II', '•••']);
+  it('draws a platoon boundary with 1 Pl and the battlegroup boundary, and the B/A company boundary when it lies on the map', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed, now, timeZone: 'Europe/London' });
+      const b = s.markers.control.filter((c) => c.kind === 'boundary').map((c) => c.label);
+      expect(b).toContain('•••');
+      expect(b).toContain('II');
+      if (b.includes('I')) seen.add('I');
+      else expect(s.friendlyForces.map((f) => f.detail).join(' ')).toContain('B/A boundary lies beyond the edge of this map');
+    }
+    expect(seen.has('I')).toBe(true);
+  });
+  it('platoon frontages vary within 800–1,500 m (light role) and 1,500–3,000 m (mechanised) (PO, 20 Nov 2026)', () => {
+    const got: Record<string, Set<number>> = { light: new Set(), mechanised: new Set() };
+    for (let seed = 1; seed <= 40; seed++) {
+      const s = writePlatoonScenario({ grid: ground, layers: null, layout, seed, task: 'secure', lane: 'most', now, timeZone: 'UTC' });
+      const m = s.friendlyForces.map((f) => f.detail).join(' ').match(/Platoon frontage is about ([\d.]+) (km|m)/)!;
+      const metres = m[2] === 'km' ? +m[1] * 1000 : +m[1];
+      const [lo, hi] = s.bgType === 'light' ? [800, 1500] : [1500, 3000];
+      expect(metres).toBeGreaterThanOrEqual(lo);
+      expect(metres).toBeLessThanOrEqual(hi);
+      got[s.bgType].add(metres);
+    }
+    expect(got.light.size).toBeGreaterThan(2);
+    expect(got.mechanised.size).toBeGreaterThan(2);
   });
 });
 

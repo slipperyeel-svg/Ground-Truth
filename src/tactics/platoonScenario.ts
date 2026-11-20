@@ -143,11 +143,12 @@ export const CAVALRY: { name: string; abbr: string; tanks?: boolean; reserve?: b
 ];
 const OBJ_NAMES = ['HAWK', 'FALCON', 'KESTREL', 'MERLIN', 'HARRIER', 'OSPREY'];
 /**
- * Frontage of a platoon in the attack, metres: wider when mechanised (PO, 15 Nov
- * 2026: give each platoon more space). First figures; PO to confirm. Boundaries
- * fall halfway between neighbouring platoons; A Coy sits beyond 1 Pl.
+ * Frontage of a platoon in the attack, metres: a range, drawn per problem and
+ * rounded to 100 m (PO, 20 Nov 2026: light role 800–1,500 m, mechanised
+ * 1,500–3,000 m; DECISIONS.md 204). Boundaries fall halfway between neighbouring
+ * platoons; A Coy sits beyond 1 Pl.
  */
-export const FRONTAGE = { light: 800, mechanised: 1200 };
+export const FRONTAGE: Record<BgType, readonly [number, number]> = { light: [800, 1500], mechanised: [1500, 3000] };
 /**
  * How long the platoon is given (PO, 15 Nov 2026: vary it). The time needed is the
  * obvious route at 2 km/h plus time for the task; the problem then makes it tight,
@@ -466,7 +467,9 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   // Your own objective gets a codename too (PO, 15 Nov 2026): "OBJ KESTREL (the track junction area at …)".
   const objCode = task === 'secure' || task === 'neutralise' ? `OBJ ${pick2(OBJ_NAMES.filter((n) => `OBJ ${n}` !== bgObjName))}` : '';
   if (objCode) objective.name = `${objCode} (${objective.name})`;
-  const spacing = FRONTAGE[bgType];
+  // Own random stream, so the other choices for a seed stay the same.
+  const [fLo, fHi] = FRONTAGE[bgType];
+  const spacing = Math.round((fLo + rng(input.seed ^ 0xf40)() * (fHi - fLo)) / 100) * 100;
   const bg = `${bn.short} BG`;
   const infKind = bgType === 'mechanised' ? 'mechanisedInfantry' as const : 'infantry' as const;
   const you = `You command 2 Platoon, B Company, ${bn.full}${bgType === 'mechanised' ? ' (mechanised, in Boxer)' : ''}. Your company commander is with Company HQ.`;
@@ -714,13 +717,15 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const bgObjOnMap = Math.abs(bgObjQ.x) <= half && Math.abs(bgObjQ.y) <= half && distance(bgObjQ, objective.point) > 450;
   const bgObjective = { point: bgObjQ, name: bgObjName, onMap: bgObjOnMap };
   const aCoyLat = onePlSide * spacing * 2.5;
-  const aCoy = clampBox({ x: start.x + v.x * aCoyLat, y: start.y + v.y * aCoyLat });
+  const aCoyRaw = { x: start.x + v.x * aCoyLat, y: start.y + v.y * aCoyLat };
+  const aCoy = clampBox(aCoyRaw);
+  // With wide mechanised frontages A Coy can lie beyond the edge of the map: then it is not drawn.
+  const onMap = (p: Point) => Math.abs(p.x) <= half && Math.abs(p.y) <= half;
+  const aCoyOnMap = onMap(aCoyRaw);
   const cCoy = clampBox(behind(1400, -onePlSide * 150));
-  friendly.push(
-    { label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company', kind: infKind },
-    { label: 'C Coy', designation: 'C', higher: '', point: cCoy, echelon: 'company', kind: infKind },
-  );
-  axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
+  if (aCoyOnMap) friendly.push({ label: 'A Coy', designation: 'A', higher: '', point: aCoy, echelon: 'company', kind: infKind });
+  friendly.push({ label: 'C Coy', designation: 'C', higher: '', point: cCoy, echelon: 'company', kind: infKind });
+  if (aCoyOnMap) axes.push({ label: 'A Coy', path: [aCoy, clampBox({ x: aCoy.x + u.x * Math.max(500, frontLine), y: aCoy.y + u.y * Math.max(500, frontLine) })], own: false });
   const across = (f: number, l0: number, l1: number): Point[] => [l0, l1].map((l) => clampBox({ x: u.x * f + v.x * l, y: u.y * f + v.y * l }));
   // The B/A boundary follows lines on the ground where it can (PO, 15 Nov
   // 2026): roads, tracks, streams, hedges, railways and wood edges, within
@@ -831,12 +836,15 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const boundary = followGround(onePlSide * (halfW + spacing));
   const plBoundary = followGround(onePlSide * halfW);
   const bgBoundary = followGround(-onePlSide * halfW);
+  const baNominal = (f: number) => ({ x: u.x * f + v.x * (laneC(f) + onePlSide * (halfW + spacing)), y: u.y * f + v.y * (laneC(f) + onePlSide * (halfW + spacing)) });
+  const baOnMap = onMap(baNominal(0)) && onMap(baNominal(Math.max(400, frontLine)));
   const lineEnds = [0, laneC1].flatMap((c0) => [c0 - onePlSide * halfW, c0 + aCoyLat + onePlSide * spacing]);
   const lineLo = Math.min(...lineEnds) - 300;
   const lineHi = Math.max(...lineEnds) + 300;
   const control: ScenarioMarkers['control'] = [
     // B Coy / A Coy boundary; sides are [left, right] looking forward: B on our side, A on theirs.
-    { kind: 'boundary', path: boundary.path, label: 'I', sides: onePlSide > 0 ? ['B', 'A'] : ['A', 'B'] },
+    // Drawn only if it lies on the map (wide mechanised frontages can put it off the edge).
+    ...(baOnMap ? [{ kind: 'boundary' as const, path: boundary.path, label: 'I', sides: (onePlSide > 0 ? ['B', 'A'] : ['A', 'B']) as [string, string] }] : []),
     { kind: 'boundary', path: plBoundary.path, label: '•••', sides: onePlSide > 0 ? ['2', '1'] : ['1', '2'] },
     { kind: 'boundary', path: bgBoundary.path, label: 'II', sides: onePlSide > 0 ? [neighbour.short, bn.short] : [bn.short, neighbour.short] },
     { kind: 'phaseLine', path: across(150, lineLo, lineHi), label: 'SL' },
@@ -870,13 +878,13 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       element: '1 up: B Coy',
       detail:
         `Mission: ${coyMission} OC's intent: to move fast and use the ground, and not to fight the enemy where he expects us. Scheme: ${coyScheme} ` +
-        `Start line: ${ref(start)}. Report crossing ${plName}. Platoon frontage is about ${km(spacing)}; your boundary with 1 Pl is shown on the map${plBoundary.follows ? `, mostly along the ${plBoundary.follows}` : ''}.`,
+        `Start line: ${ref(start)}. Report crossing ${plName}. Platoon frontage is about ${km(2 * halfW)}; your boundary with 1 Pl is shown on the map${plBoundary.follows ? `, mostly along the ${plBoundary.follows}` : ''}.`,
     },
     {
       element: 'Flanks',
       detail:
-        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about ${km(Math.abs(aCoyLat))} away beyond 1 Pl; the B/A boundary is shown on the map${boundary.follows ? `, mostly along the ${boundary.follows}` : ''}. ` +
-        `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: the battlegroup boundary, about ${km(spacing / 2)} away${bgBoundary.follows ? `, mostly along the ${bgBoundary.follows}` : ''}. Beyond it is ${neighbour.short} BG, whose nearest troops are about 5 km away and out of contact. ` +
+        `${onePlSideWord[0].toUpperCase() + onePlSideWord.slice(1)}: A Coy, about ${km(Math.abs(aCoyLat))} away beyond 1 Pl; ${baOnMap ? `the B/A boundary is shown on the map${boundary.follows ? `, mostly along the ${boundary.follows}` : ''}` : 'the B/A boundary lies beyond the edge of this map'}. ` +
+        `${openSideWord[0].toUpperCase() + openSideWord.slice(1)}: the battlegroup boundary, about ${km(halfW)} away${bgBoundary.follows ? `, mostly along the ${bgBoundary.follows}` : ''}. Beyond it is ${neighbour.short} BG, whose nearest troops are about 5 km away and out of contact. ` +
         `Rear: C Coy (battlegroup reserve) at ${ref(cCoy)}.`,
     },
   ];
