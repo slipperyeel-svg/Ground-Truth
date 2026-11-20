@@ -463,7 +463,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
   const tankRegt = pick2(CAVALRY.filter((c) => c.tanks));
   const battery = pick2(OWN_ARTILLERY.batteries);
   const bgObjName = `OBJ ${pick2(OBJ_NAMES)}`;
-  const plName = `PL ${pick2(PL_NAMES)}`;
+  pick2(PL_NAMES); // (was the phase line's name: PO, 20 Nov 2026, no phase lines; kept so the other choices for a seed stay the same)
   // Your own objective gets a codename too (PO, 15 Nov 2026): "OBJ KESTREL (the track junction area at …)".
   const objCode = task === 'secure' || task === 'neutralise' ? `OBJ ${pick2(OBJ_NAMES.filter((n) => `OBJ ${n}` !== bgObjName))}` : '';
   if (objCode) objective.name = `${objCode} (${objective.name})`;
@@ -848,7 +848,6 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
     { kind: 'boundary', path: plBoundary.path, label: '•••', sides: onePlSide > 0 ? ['2', '1'] : ['1', '2'] },
     { kind: 'boundary', path: bgBoundary.path, label: 'II', sides: onePlSide > 0 ? [neighbour.short, bn.short] : [bn.short, neighbour.short] },
     { kind: 'phaseLine', path: across(150, lineLo, lineHi), label: 'SL' },
-    { kind: 'phaseLine', path: across(Math.min(900, Math.max(400, frontLine - 300)), lineLo, lineHi), label: plName },
   ];
   const coyMission = {
     secure: `B Coy is to break through the enemy's forward line on the main route and secure ${objective.name} in order to allow ${bg} to pass through to ${bgObjName}.`,
@@ -878,7 +877,7 @@ export function writePlatoonScenario(input: ScenarioInput): PlatoonScenario {
       element: '1 up: B Coy',
       detail:
         `Mission: ${coyMission} OC's intent: to move fast and use the ground, and not to fight the enemy where he expects us. Scheme: ${coyScheme} ` +
-        `Start line: ${ref(start)}. Report crossing ${plName}. Platoon frontage is about ${km(2 * halfW)}; your boundary with 1 Pl is shown on the map${plBoundary.follows ? `, mostly along the ${plBoundary.follows}` : ''}.`,
+        `Start line: ${ref(start)}. Platoon frontage is about ${km(2 * halfW)}; your boundary with 1 Pl is shown on the map${plBoundary.follows ? `, mostly along the ${plBoundary.follows}` : ''}.`,
     },
     {
       element: 'Flanks',
